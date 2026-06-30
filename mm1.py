@@ -1,14 +1,13 @@
 import shutil
 import traceback
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List
 import json
 from docx.shared import Mm
 from docxtpl import DocxTemplate, InlineImage
 from jinja2 import Environment
 
 from uitls.excel_utils import read_excel_sheet_values
-from uitls.jsonencoder import to_json_str
 from uitls.pdf_utils import snap_pdf_all_page
 
 IMAGE_SIZE = 150
@@ -53,16 +52,22 @@ class SnapshotAndInlineImage:
 
 # OutputContractFile
 class ContractSnapshotFile:
-    def __init__(self, title: str):
-        self.title = title
-        self.images: List[str] = []
+    def __init__(self, title : str ):
+        self.title = str
+        self.image_file_list: List[str] = []
 
     def add_image_file(self, image_file: str):
-        self.images.append(image_file)
+        self.image_file_list.append(SnapshotAndInlineImage(image_file))
 
-    def add_all_images(self, image_file_list: List[str]):
+    def add_all_images(self, image_file_list: List[Path]):
         for image_file in image_file_list:
-            self.images.append(image_file)
+            self.image_file_list.append(SnapshotAndInlineImage(image_file))
+
+
+# class ContractSnapshot:
+#     def __init__(self, main_file: Path):
+#         self.main_contract_snapshot = []
+#         self.order_snapshots = []
 
 
 class ContractObj:
@@ -134,30 +139,30 @@ def get_contract_file_in_path(contract_base_path: Path):
     return files
 
 
-def make_contract_file_snapshots(output_image_path: Path, prefix: str, file: Path,
-                                 contract_id: str) -> ContractSnapshotFile:
+def dump_contract_file(output_image_path: Path, prefix: str, file: Path,
+                       contract_id: str) -> ContractSnapshotFile:
     suffix = file.suffix.lower()
 
-    out = ContractSnapshotFile(file.stem)
+    out = ContractSnapshotFile(file)
 
     if suffix == ".pdf":
         # page_num, doc.page_count, pdf_filename)
         def gen_contract_image_file_name(page_num: int, page_count: int, pdf_filename: str):
             # image_name = f"{contract_id}-合同截图-{prefix}-{file.stem}-{page_num:02}.jpg"
-            image_name1 = f"{contract_id}-合同截图-{prefix}-{page_num:03}.jpg"
-            # image_full_name = output_image_path / image_name
-            return image_name1
+            image_name = f"{contract_id}-合同截图-{prefix}-{page_num:03}.jpg"
+            image_full_name = output_image_path / image_name
+            return str(image_full_name)
 
-        file_list = snap_pdf_all_page(output_image_path, file, contract_id, gen_contract_image_file_name, 30)
+        file_list = snap_pdf_all_page(file, contract_id, gen_contract_image_file_name, 30)
         out.add_all_images(file_list)
     else:
-        image_name2 = f"{contract_id}-合同截图-{prefix}-000{suffix}"
-        image_full_name = output_image_path / image_name2
+        image_name = f"{contract_id}-合同截图-{prefix}-000{suffix}"
+        image_full_name = output_image_path / image_name
 
         try:
             shutil.copy2(file, image_full_name)
             print(f"已复制：{contract_id} ,  {str(image_full_name)[-30:]}")
-            out.add_image_file(image_name2)
+            out.add_image_file(image_full_name)
         except Exception as e:
             print(f"复制失败 {file}  {image_full_name}: {e}")
 
@@ -177,12 +182,16 @@ def process_contract_simple_path(contract_base_path: Path, output_image_path: Pa
         print(f"Not found contract file in path : {contract_parent_path}")
         return contract_snapshot_file_list
 
+    target_contract_parent_path = output_image_path / target_contract_id
+    if not target_contract_parent_path.exists():
+        target_contract_parent_path.mkdir(parents=True)
+
     index = 0
 
     for file in contract_files:
         index = index + 1
-        contract_snapshot_file = make_contract_file_snapshots(output_image_path, f"{contract_type}-{index:02}", file,
-                                                              target_contract_id)
+        contract_snapshot_file = dump_contract_file(target_contract_parent_path, f"{contract_type}-{index:02}", file,
+                                                    target_contract_id)
         contract_snapshot_file_list.append(contract_snapshot_file)
 
     return contract_snapshot_file_list
@@ -312,7 +321,7 @@ def convert_user_ss_snapshot_images_to_docx(project_contract_obj_list: List[Cont
     docx.save(dest_file)
 
 
-def dump_snapshot_files(files: List[ContractSnapshotFile]) -> List[Dict[str, Any]]:
+def dump_snapshot_files(files: List[ContractSnapshotFile]):
     if files is None:
         return []
     # self.main_pdf_file = main_pdf_file
@@ -320,38 +329,35 @@ def dump_snapshot_files(files: List[ContractSnapshotFile]) -> List[Dict[str, Any
     # self.image_file_list: List[SnapshotAndInlineImage] = []
     output = []
     for pmf in files:
-        out = {"name": pmf.title}
-        pmf_images = []
-        for one in pmf.images:
-            pmf_images.append(one)
-        out["snapshots"] = pmf_images
-         # ,"snapshots": pmf_images}
+        out = {}
+        out["main_contract"] = pmf.main_pdf_file.stem
+        file_list = []
+        for one in pmf.image_file_list:
+            name = one.snapshot.name
+            file_list.append(name)
+        out["snapshots"] = file_list
         output.append(out)
-
-    return output
 
 
 def dump_project_contract_obj_list(project_contract_obj_list: List[ContractObj]):
+    output = {}
     contracts = []
     for project in project_contract_obj_list:
-
-        output = {}
         contract_id = project.contract_id
         # contract_name = project.contract_name
+
         main_file = dump_snapshot_files(project.main_file)
         order_files = []
         if project.order_files is not None:
             for ofs in project.order_files:
                 order_f = dump_snapshot_files(ofs)
                 order_files.append(order_f)
-        output["contractId"] = contract_id
-        output["contract"] = main_file
-        output["orders"] = order_files
-        contracts.append(output)
-
-    obj = {"contracts": contracts}
-    return obj
-
+        output["contract_id"] =  contract_id
+        output["main_file"] = main_file
+        output["order_files"] = order_files
+        contracts.append( output )
+    output["contracts"] = contracts
+    return output
 
 def main():
     # if args.input_xlsx is None or args.input_xlsx == "":
@@ -363,14 +369,12 @@ def main():
     #     print("--pdf-root 空")
     #     return False
 
-    # excel_file_name = r"C:\Users\101202304023\Desktop\工作\投标项目\2026-2028年中国联通软研院安全准入与渗透测试安全服务(LK)\案例\2023-2026年合同汇总-恒安嘉新.xlsx"
-    excel_file_name = "test.input.xlsx"
-    # contract_base_root = r"C:\Users\101202304023\Desktop\工作\投标项目\2026-2028年中国联通软研院安全准入与渗透测试安全服务(LK)\案例\20260629合同下载"
-    contract_base_root = r".\test.data"
-    # output_image_dir = r"C:\Users\101202304023\Desktop\工作\投标项目\2026-2028年中国联通软研院安全准入与渗透测试安全服务(LK)\案例\images"
-    output_images_dir = "./test.images"
+    excel_file_name = r"C:\Users\101202304023\Desktop\工作\投标项目\2026-2028年中国联通软研院安全准入与渗透测试安全服务(LK)\案例\2023-2026年合同汇总-恒安嘉新.xlsx"
+
+    contract_base_root = r"C:\Users\101202304023\Desktop\工作\投标项目\2026-2028年中国联通软研院安全准入与渗透测试安全服务(LK)\案例\20260629合同下载"
+    output_image_dir = r"C:\Users\101202304023\Desktop\工作\投标项目\2026-2028年中国联通软研院安全准入与渗透测试安全服务(LK)\案例\images"
     project_contract_obj_list = read_contracts_cases(contract_base_root,
-                                                     output_images_dir,
+                                                     output_image_dir,
                                                      excel_file_name
                                                      )
     docx_template_file = "./template1.docx"
@@ -378,11 +382,9 @@ def main():
     if project_contract_obj_list is None:
         return
     json_path = "local.project.json"
-    dump_obj1 = dump_project_contract_obj_list(project_contract_obj_list)
+    dump_obj =  dump_project_contract_obj_list( project_contract_obj_list )
     with open(json_path, "w", encoding="utf-8") as f:
-        # s = to_json_str(dump_obj1)
-        # f.write(s)
-        json.dump(dump_obj1, f, ensure_ascii=False, indent=4)
+        json.dump(dump_obj, f, ensure_ascii=False, indent=4)
 
     #
     # convert_user_ss_snapshot_images_to_docx(project_contract_obj_list, docx_template_file, output_docx_file)
