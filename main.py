@@ -109,7 +109,9 @@ def find_contract_and_orders(all_path: List[str], contract_id: str) -> None | Co
         return None
 
 
-IGNORE_NAMES = ["核定表", "登记证明"]
+IGNORE_NAMES = ["核定表", "登记证明","会议纪要"]
+ACCEPT_SUFFIX= [".pdf"]
+
 
 
 def ignore_files(filename: str):
@@ -120,15 +122,18 @@ def ignore_files(filename: str):
 
 
 # 在 合同的子目录中，找到所以的正式文件
-def get_contract_file_in_path(contract_base_path: Path):
+def get_contract_file_in_path(contract_base_path: Path, accept_suffix):
     # contract_sub_path = contract_base_path / subpath
     if not contract_base_path.exists():
         return None
     all_file = [f for f in contract_base_path.iterdir() if f.is_file()]
     files = []
     for f in all_file:
-        filename = f.stem
-        if ignore_files(filename):
+        if ignore_files(f.stem) :
+            continue
+        file_suffix = f.suffix.lower()
+        if file_suffix not in accept_suffix:
+            print(f"warn: get contract not accept suffix, {f.name} , {accept_suffix}")
             continue
         files.append(f)
     return files
@@ -172,7 +177,7 @@ def process_contract_simple_path(contract_base_path: Path, output_image_path: Pa
     if not contract_parent_path.exists():
         print(f"Contract path not exist , {contract_parent_path}")
         return contract_snapshot_file_list
-    contract_files = get_contract_file_in_path(contract_parent_path)
+    contract_files = get_contract_file_in_path(contract_parent_path , ACCEPT_SUFFIX )
     if contract_files is None:
         print(f"Not found contract file in path : {contract_parent_path}")
         return contract_snapshot_file_list
@@ -332,7 +337,7 @@ def dump_snapshot_files(files: List[ContractSnapshotFile]) -> List[Dict[str, Any
 
 
 def dump_project_contract_obj_list(project_contract_obj_list: List[ContractObj]):
-    contracts = []
+    projects = []
     for project in project_contract_obj_list:
 
         output = {}
@@ -345,11 +350,12 @@ def dump_project_contract_obj_list(project_contract_obj_list: List[ContractObj])
                 order_f = dump_snapshot_files(ofs)
                 order_files.append(order_f)
         output["contractId"] = contract_id
-        output["contract"] = main_file
+        output["name"] = contract_id
+        output["contracts"] = main_file
         output["orders"] = order_files
-        contracts.append(output)
+        projects.append(output)
 
-    obj = {"contracts": contracts}
+    obj = {"projects": projects}
     return obj
 
 
@@ -366,7 +372,7 @@ def main():
     # excel_file_name = r"C:\Users\101202304023\Desktop\工作\投标项目\2026-2028年中国联通软研院安全准入与渗透测试安全服务(LK)\案例\2023-2026年合同汇总-恒安嘉新.xlsx"
     excel_file_name = "test.input.xlsx"
     # contract_base_root = r"C:\Users\101202304023\Desktop\工作\投标项目\2026-2028年中国联通软研院安全准入与渗透测试安全服务(LK)\案例\20260629合同下载"
-    contract_base_root = r".\test.data"
+    contract_base_root = r".\test.data1"
     # output_image_dir = r"C:\Users\101202304023\Desktop\工作\投标项目\2026-2028年中国联通软研院安全准入与渗透测试安全服务(LK)\案例\images"
     output_images_dir = "./test.images"
     project_contract_obj_list = read_contracts_cases(contract_base_root,

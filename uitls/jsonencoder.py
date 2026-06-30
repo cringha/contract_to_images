@@ -2,11 +2,16 @@ import base64
 import datetime
 import json
 import threading
-from typing import List
+import json
+import logging
+from pathlib import Path
+from typing import Any, Dict, Optional
 
-from pandas import to_datetime
+from typing import List
+# from pandas import to_datetime
 
 from uitls.syncutils import locked
+from uitls.utils import to_datetime
 
 
 class ObjectJsonEncoder:
@@ -29,7 +34,6 @@ class ObjectJsonEncoder:
 
 
 class DefaultEncoder(ObjectJsonEncoder):
-
 
     def match(self, clazz) -> bool:
         return issubclass(clazz, (list, set))
@@ -153,7 +157,6 @@ class ComplexEncoder(json.JSONEncoder):
             return super().default(obj)
 
 
-
 def to_json_str2(obj):
     s = json.dumps(obj, cls=ComplexEncoderEx)
     return s
@@ -168,28 +171,25 @@ def json_to_dict(buff):
     return json.loads(buff)
 
 
-
-def read_dict_val (obj, name):
+def read_dict_val(obj, name):
     if name in obj:
         return obj[name]
     return None
 
-def read_as_bytes (obj, name, encode="base64"):
 
+def read_as_bytes(obj, name, encode="base64"):
     val = read_dict_val(obj, name)
     if val is None:
         return None
 
-    if isinstance(val,bytes )  :
+    if isinstance(val, bytes):
         return val
 
-    if isinstance(val,str ):
+    if isinstance(val, str):
         if encode == "base64":
-            if val.startswith("base64:") :
+            if val.startswith("base64:"):
                 val = val[7:]
-            return base64.b64decode( val )
-
-
+            return base64.b64decode(val)
 
     return val
 
@@ -214,3 +214,26 @@ def read_int(obj, name):
     return None
 
 
+def load_json_file(file_path: str) -> Optional[Dict[str, Any]]:
+    """
+    从文件加载JSON数据
+
+    Args:
+        file_path: JSON文件路径
+
+    Returns:
+        dict: 解析后的JSON数据，解析失败返回None
+
+    Raises:
+        FileNotFoundError: 当文件不存在时
+        json.JSONDecodeError: 当JSON格式错误时
+    """
+
+    path = Path(file_path)
+    if not path.exists():
+        raise FileNotFoundError(f"文件不存在: {file_path}")
+
+    with open(file_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    return data
