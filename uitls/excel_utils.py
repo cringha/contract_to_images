@@ -1,5 +1,16 @@
 
 import pandas as pd
+
+
+def json_fix_pd_timestamp(obj, fmt = "%Y-%m-%d %H:%M:%S"):
+    out = {}
+    for k, v in obj.items():
+        if isinstance(v, pd.Timestamp):
+            out[k] = v.strftime(fmt )
+        else:
+            out[k] = v
+    return out
+
 def read_row_value_to_dict(row, column_names):
     current = {}
     for col in column_names:

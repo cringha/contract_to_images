@@ -1,15 +1,14 @@
+import argparse
+import json
+import os.path
 import shutil
 import traceback
 from pathlib import Path
 from typing import List, Dict, Any
-import json
-from docx.shared import Mm
-from docxtpl import DocxTemplate, InlineImage
-from jinja2 import Environment
 
-from uitls.excel_utils import read_excel_sheet_values
-from uitls.jsonencoder import to_json_str
+from uitls.excel_utils import read_excel_sheet_values, json_fix_pd_timestamp
 from uitls.pdf_utils import snap_pdf_all_page
+from uitls.utils import clear_directory
 
 IMAGE_SIZE = 150
 
@@ -69,9 +68,10 @@ class ContractObj:
     def __init__(self, contract_id: str):
         self.contract_id = contract_id
         self.orders = []
-
+        self.meta: Dict[str, Any] = {}  # 存放 合同的其他信息，例如 客户，签署日期
         self.main_file: List[ContractSnapshotFile] = []
         self.order_files: List[List[ContractSnapshotFile]] = []
+        self.invoice_files: List[List[ContractSnapshotFile]] = []
 
     def add_order(self, order):
         self.orders.append(order)
@@ -84,6 +84,12 @@ class ContractObj:
 
     def set_order_files(self, order_files: List[List[ContractSnapshotFile]]):
         self.order_files = order_files
+
+    def set_invoice_files(self, invoice_files: List[List[ContractSnapshotFile]]):
+        self.invoice_files = invoice_files
+
+    def set_meta(self, meta):
+        self.meta = meta
 
 
 '''
@@ -109,9 +115,9 @@ def find_contract_and_orders(all_path: List[str], contract_id: str) -> None | Co
         return None
 
 
-IGNORE_NAMES = ["核定表", "登记证明","会议纪要"]
-ACCEPT_SUFFIX= [".pdf"]
-
+IGNORE_NAMES = ["核定表", "登记证明", "会议纪要"]
+ACCEPT_SUFFIX_CONTRACT = [".pdf"]
+ACCEPT_SUFFIX_ORDERS = [".pdf", ".jpg", ".png"]
 
 
 def ignore_files(filename: str):
@@ -129,7 +135,7 @@ def get_contract_file_in_path(contract_base_path: Path, accept_suffix):
     all_file = [f for f in contract_base_path.iterdir() if f.is_file()]
     files = []
     for f in all_file:
-        if ignore_files(f.stem) :
+        if ignore_files(f.stem):
             continue
         file_suffix = f.suffix.lower()
         if file_suffix not in accept_suffix:
@@ -149,14 +155,14 @@ def make_contract_file_snapshots(output_image_path: Path, prefix: str, file: Pat
         # page_num, doc.page_count, pdf_filename)
         def gen_contract_image_file_name(page_num: int, page_count: int, pdf_filename: str):
             # image_name = f"{contract_id}-合同截图-{prefix}-{file.stem}-{page_num:02}.jpg"
-            image_name1 = f"{contract_id}-合同截图-{prefix}-{page_num:03}.jpg"
+            image_name1 = f"{contract_id}-{prefix}-{page_num:03}.jpg"
             # image_full_name = output_image_path / image_name
             return image_name1
 
         file_list = snap_pdf_all_page(output_image_path, file, contract_id, gen_contract_image_file_name, 30)
         out.add_all_images(file_list)
     else:
-        image_name2 = f"{contract_id}-合同截图-{prefix}-000{suffix}"
+        image_name2 = f"{contract_id}-{prefix}-000{suffix}"
         image_full_name = output_image_path / image_name2
 
         try:
@@ -171,13 +177,13 @@ def make_contract_file_snapshots(output_image_path: Path, prefix: str, file: Pat
 
 def process_contract_simple_path(contract_base_path: Path, output_image_path: Path,
                                  target_contract_id: str,
-                                 contract_id: str, contract_type: str) -> List[ContractSnapshotFile]:
+                                 contract_id: str, contract_type: str, accept_suffix) -> List[ContractSnapshotFile]:
     contract_snapshot_file_list = []
     contract_parent_path = contract_base_path / contract_id
     if not contract_parent_path.exists():
         print(f"Contract path not exist , {contract_parent_path}")
         return contract_snapshot_file_list
-    contract_files = get_contract_file_in_path(contract_parent_path , ACCEPT_SUFFIX )
+    contract_files = get_contract_file_in_path(contract_parent_path, accept_suffix)
     if contract_files is None:
         print(f"Not found contract file in path : {contract_parent_path}")
         return contract_snapshot_file_list
@@ -193,31 +199,59 @@ def process_contract_simple_path(contract_base_path: Path, output_image_path: Pa
     return contract_snapshot_file_list
 
 
-def process_contract_obj(contract_base_path: Path, output_image_path: Path, contract: ContractObj):
-    # snap_pdf_all_page
+# 处理一个 合同对象（ 框架+订单 或者 单独合同 ）
+def process_contract_obj(contract_base_path: Path, invoice_base_path: Path | None, output_image_path: Path,
+                         contract: ContractObj):
+    # snap_pdf_all_pagecontract_base_path: Path,
 
+    # 合同 PDF 文件
     main_file_list = process_contract_simple_path(contract_base_path, output_image_path,
                                                   contract.contract_id,
                                                   contract.contract_id,
-                                                  "MAIN")
+                                                  "合同-MAIN", ACCEPT_SUFFIX_CONTRACT)
 
     contract.set_main_file(main_file_list)
+
+    invoice_snapshot_files: List[List[ContractSnapshotFile]] = []
+    # 合同发票
+    if invoice_base_path is not None:
+        main_invoice_file_list = process_contract_simple_path(invoice_base_path, output_image_path,
+                                                              contract.contract_id,
+                                                              contract.contract_id,
+                                                              "合同发票-INV-M", ACCEPT_SUFFIX_ORDERS)
+        if main_invoice_file_list is not None and len(main_invoice_file_list) > 0:
+            invoice_snapshot_files.append(main_invoice_file_list)
+
+    # 合同的订单
     order_snapshot_files: List[List[ContractSnapshotFile]] = []
     index = 1
     for order_file in contract.orders:
+        # 订单有的时候是 截图 JPG ，有的时候是 PDF
         order_snapshot_file = process_contract_simple_path(contract_base_path, output_image_path,
                                                            contract.contract_id,
                                                            order_file,
-                                                           f"ORDER-{index}")
+                                                           f"订单-ORDER-{index}", ACCEPT_SUFFIX_ORDERS)
         if order_snapshot_file is not None and len(order_snapshot_file) > 0:
             order_snapshot_files.append(order_snapshot_file)
+
+        # 订单发票
+        if invoice_base_path is not None:
+            order_invoice_file_list = process_contract_simple_path(invoice_base_path, output_image_path,
+                                                                   contract.contract_id,
+                                                                   order_file,
+                                                                   f"订单发票-INV-O-{index}", ACCEPT_SUFFIX_ORDERS)
+
+            if order_invoice_file_list is not None and len(order_invoice_file_list) > 0:
+                invoice_snapshot_files.append(order_invoice_file_list)
         index += 1
 
     contract.set_order_files(order_snapshot_files)
+    contract.set_invoice_files(invoice_snapshot_files)
 
 
 def read_contracts_cases(
         contract_base_root,
+        invoice_base_root,
         output_image_dir,
         excel_file_name,
         contract_sheet_name="Contract",
@@ -229,9 +263,18 @@ def read_contracts_cases(
         print(f"Base contract path, not exist , {contract_base_root}")
         return None
 
+    invoice_base_path = None
+    if invoice_base_root is not None and invoice_base_root != "":
+        invoice_base_path = Path(invoice_base_root)
+        if not invoice_base_path.exists():
+            print(f"Base invoice path, not exist , {invoice_base_root}")
+            return None
+
     output_image_path = Path(output_image_dir)
     if not output_image_path.exists():
         output_image_path.mkdir(parents=True)
+    else:
+        clear_directory(output_image_dir)
 
     all_contract_paths = read_all_contract_subpath(contract_base_path)
 
@@ -250,71 +293,16 @@ def read_contracts_cases(
             print(f"Not found contract id {contract_id} in root:{contract_base_path}")
             continue
 
+        project_contract_obj.set_meta(project)
+
         try:
             print(f"Process contract , {contract_id} - {project_contract_name}")
-            process_contract_obj(contract_base_path, output_image_path, project_contract_obj)
+            process_contract_obj(contract_base_path, invoice_base_path, output_image_path, project_contract_obj)
             project_contract_obj_list.append(project_contract_obj)
         except Exception as e:
             print(f"Process contract, {contract_id} error:{e}")
 
     return project_contract_obj_list
-
-
-"""
-    将输入的 用户列表，转换为 WORD 
-"""
-
-
-def pre_process_snap_file(tpl, snap: ContractSnapshotFile):
-    if snap is None:
-        return
-    if snap.image_file_list is None:
-        return
-    for pmf in snap.image_file_list:
-        vv = str(pmf.snapshot)
-        pmf.inline_image = InlineImage(tpl, vv, width=Mm(IMAGE_SIZE))
-
-
-def pre_process_project_image_obj(tpl, project: ContractObj):
-    if project.main_file is not None:
-        for pmf in project.main_file:
-            pre_process_snap_file(tpl, pmf)
-    if project.order_files is not None:
-        for ofs in project.order_files:
-            for pmf in ofs:
-                pre_process_snap_file(tpl, pmf)
-
-
-def convert_user_ss_snapshot_images_to_docx(project_contract_obj_list: List[ContractObj],
-                                            template_path,
-                                            output_docx_file=""):
-    all_users = []
-
-    docx = DocxTemplate(template_path)
-
-    for project in project_contract_obj_list:
-        pre_process_project_image_obj(docx, project)
-
-    obj = {"projects": project_contract_obj_list}
-
-    jinja_env = Environment()
-    # jinja_env.globals['user_project_exp'] = user_project_exp
-
-    # 获取要插入到文档中的数据
-    # 渲染文档
-    docx.render(obj, jinja_env)
-    # 保存生成的文档
-
-    dest_file = Path(output_docx_file)
-    file_name = dest_file.stem
-    base_path = dest_file.parent
-    counter = 1
-    while dest_file.exists():
-        dest_file = dest_file.parent / f"{file_name}_{counter}{dest_file.suffix}"
-        counter += 1
-
-    print("save docx : {dest_file}".format(dest_file=dest_file))
-    docx.save(dest_file)
 
 
 def dump_snapshot_files(files: List[ContractSnapshotFile]) -> List[Dict[str, Any]]:
@@ -323,14 +311,14 @@ def dump_snapshot_files(files: List[ContractSnapshotFile]) -> List[Dict[str, Any
     # self.main_pdf_file = main_pdf_file
     # self.title = main_pdf_file.stem
     # self.image_file_list: List[SnapshotAndInlineImage] = []
-    output = []
+    output: List[Dict[str, Any]] = []
     for pmf in files:
-        out = {"name": pmf.title}
+        out: Dict[str, Any] = {"name": pmf.title}
         pmf_images = []
         for one in pmf.images:
             pmf_images.append(one)
         out["snapshots"] = pmf_images
-         # ,"snapshots": pmf_images}
+        # ,"snapshots": pmf_images}
         output.append(out)
 
     return output
@@ -349,85 +337,94 @@ def dump_project_contract_obj_list(project_contract_obj_list: List[ContractObj])
             for ofs in project.order_files:
                 order_f = dump_snapshot_files(ofs)
                 order_files.append(order_f)
+
+        invoice_files = []
+        if project.invoice_files is not None:
+            for ifs in project.invoice_files:
+                invoice_f = dump_snapshot_files(ifs)
+                invoice_files.append(invoice_f)
+
         output["contractId"] = contract_id
-        output["name"] = contract_id
         output["contracts"] = main_file
         output["orders"] = order_files
+        output["invoices"] = invoice_files
+
+        output["meta"] = json_fix_pd_timestamp(project.meta)
         projects.append(output)
 
     obj = {"projects": projects}
     return obj
 
 
-def main():
-    # if args.input_xlsx is None or args.input_xlsx == "":
-    #     print("--input-xlsx 空")
-    #
-    #     return False
-    #
-    # if args.pdf_root is None or args.pdf_root == "":
-    #     print("--pdf-root 空")
-    #     return False
+def main(args):
+    if args.input_xlsx is None or args.input_xlsx == "":
+        print("--input-xlsx 空")
+        return False
 
-    # excel_file_name = r"C:\Users\101202304023\Desktop\工作\投标项目\2026-2028年中国联通软研院安全准入与渗透测试安全服务(LK)\案例\2023-2026年合同汇总-恒安嘉新.xlsx"
-    excel_file_name = "test.input.xlsx"
-    # contract_base_root = r"C:\Users\101202304023\Desktop\工作\投标项目\2026-2028年中国联通软研院安全准入与渗透测试安全服务(LK)\案例\20260629合同下载"
-    contract_base_root = r".\test.data1"
-    # output_image_dir = r"C:\Users\101202304023\Desktop\工作\投标项目\2026-2028年中国联通软研院安全准入与渗透测试安全服务(LK)\案例\images"
-    output_images_dir = "./test.images"
+    if not os.path.exists(args.input_xlsx):
+        print("file not exist , {args.input_xlsx}")
+        return False
+
+    if args.contract_base_root is None or args.contract_base_root == "":
+        print("--contract-base-root 空")
+        return False
+
+    invoice_base_root = None
+    if args.invoice_base_root is None or args.invoice_base_root == "":
+        print("--invoice-base-root 空")
+        return False
+
+    excel_file_name = args.input_xlsx
+    # excel_file_name = "test.input.xlsx"
+    contract_base_root = args.contract_base_root
+
+    invoice_base_root = args.invoice_base_root
+    output_images_dir = args.output_image_root  # "./test.images"
+
     project_contract_obj_list = read_contracts_cases(contract_base_root,
+                                                     invoice_base_root,
                                                      output_images_dir,
                                                      excel_file_name
                                                      )
-    docx_template_file = "./template1.docx"
-    output_docx_file = "./my-output.docx"
     if project_contract_obj_list is None:
-        return
-    json_path = "local.project.json"
+        return False
+    json_path = args.output_file
     dump_obj1 = dump_project_contract_obj_list(project_contract_obj_list)
     with open(json_path, "w", encoding="utf-8") as f:
         # s = to_json_str(dump_obj1)
         # f.write(s)
         json.dump(dump_obj1, f, ensure_ascii=False, indent=4)
+        print(f"save json file {json_path}")
 
-    #
-    # convert_user_ss_snapshot_images_to_docx(project_contract_obj_list, docx_template_file, output_docx_file)
-
-    # if args.convert:
-    #     convert_user_ss_snapshot_images_to_docx(user_list, args.snapshot_images, args.docx_template_file,
-    #                                             args.output_docx_file)
     return True
 
 
 if __name__ == "__main__":
 
-    #
-    # parser = argparse.ArgumentParser(description="社保PDF转用户截图工具")
-    # parser.add_argument("-i", "--input-xlsx", help="输入Xlsx文件")
-    # parser.add_argument("-p", "--pdf-root", help="输入PDF文件根目录")
-    # parser.add_argument("-s", "--snapshot-images", help="输出截图文件根目录; default: %(default)s", default="./output")
-    # parser.add_argument("--sheet-name-user", help="User sheet name; default: %(default)s", default="Users")
-    # parser.add_argument("--sheet-name-file", help="File sheet name; default: %(default)s", default="Files")
-    # parser.add_argument("--col-user-name", help="user column name in `User sheet`; default: %(default)s",
-    #                     default="Name")
-    # parser.add_argument("--col-city-name", help="city column name in `User sheet and File sheet`; default: %(default)s",
-    #                     default="City")
-    # parser.add_argument("--col-file-name", help="file column name in `File sheet`; default: %(default)s",
-    #                     default="File")
-    #
-    # parser.add_argument("-c", "--convert", action="store_true", help="将截图转换为DOCX文档")
-    # parser.add_argument("-t", "--docx-template-file", help="docx template filename; default: %(default)s",
-    #                     default="./data/user_ss_template.docx")
-    # parser.add_argument("-o", "--output-docx-file", help="输出docx文件; default: %(default)s",
-    #                     default="./user-ss-snapshot.docx")
-    # # parser.add_argument("-h", "--help", help="打印参数信息")
-    #
-    # args = parser.parse_args()
+    # contract_sheet_name="Contract",
+    #         col_contract_id="项目编号", col_contract_name="合同名称",
+    parser = argparse.ArgumentParser(description="转换合同发票截图工具")
+    parser.add_argument("-i", "--input-xlsx", help="输入Xlsx文件")
+    parser.add_argument("-c", "--contract-base-root", help="输入合同文件根目录")
+    parser.add_argument("-v", "--invoice-base-root", help="输入发票文件根目录")
+    parser.add_argument("--output-image-root", help="输出截图图片文件根目录, default: %(default)s",
+                        default="./local.images")
+
+    parser.add_argument("--sheet-name-contract", help="Contract sheet name; default: %(default)s", default="Contract")
+    parser.add_argument("--col-project-id", help="project id column name in `Contract sheet`; default: %(default)s",
+                        default="项目编号")
+    parser.add_argument("--col-contract-name",
+                        help="contract name column name in `Contract sheet`; default: %(default)s",
+                        default="合同名称")
+    parser.add_argument("-o", "--output-file", help="输出的JSON文件; default: %(default)s",
+                        default="./local-contracts.json")
+
 
     try:
-        result = main()
-        # if not result: args
-        #     parser.print_help()
+        args = parser.parse_args()
+        result = main(args)
+        if not result:
+            parser.print_help()
     except Exception as e:
         print("Exec main error ", e)
         traceback.print_exc()

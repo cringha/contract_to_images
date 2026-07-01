@@ -425,3 +425,21 @@ tables = string.ascii_letters + string.digits
 def get_rand_str(k=20) -> str:
     res = ''.join(random.choices(tables, k=k))
     return res
+
+
+
+import shutil
+import os
+
+def clear_directory(directory):
+    for filename in os.listdir(directory):
+        file_path = os.path.join(directory, filename)
+        try:
+            if os.path.isfile(file_path):
+                os.unlink(file_path)  # 删除文件
+            elif os.path.isdir(file_path):
+                shutil.rmtree(file_path)  # 删除非空目录（慎用，会递归删除）
+        except Exception as e:
+            print(f'Failed to delete {file_path}. Reason: {e}')
+
+
