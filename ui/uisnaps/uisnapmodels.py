@@ -17,6 +17,9 @@ class SnapshotModel:
         self.name = name
         self.snapshots = snapshots
 
+    def __str__(self):
+        return f'SnapshotModel {self.item_type}-{self.name}-{len(self.snapshots)}'
+
     def get_pre_snapshot_url(self, index: int) -> str | None:
         return self.get_snapshot_url(index - 1)
 
@@ -40,6 +43,9 @@ class ProjectItemModel:
     def __init__(self, model_type: ProjectItemType, snapshots: List[SnapshotModel] | None):
         self.model_type = model_type
         self.snapshots = snapshots
+
+    def __str__(self):
+        return f'ProjectItemModel {self.model_type}-snapshots-{len(self.snapshots)}'
 
     def get_model_names(self) -> List[str]:
         if self.snapshots is not None:
@@ -73,6 +79,9 @@ class ProjectModel:
         self.all_snapshots: List[SnapshotModel] = []
         self.init_all_snapshots()
 
+    def __str__(self):
+        return f'{self.project_id}-{self.get_project_name()}'
+
     def get_project_name(self) -> str:
         return self.meta['项目名称']
 
@@ -84,8 +93,12 @@ class ProjectModel:
 
     def get_snapshot_by_index(self, index: int):
         if index < 0 or index >= len(self.all_snapshots):
-            return self.all_snapshots[index]
-        return None
+            return None
+
+        return self.all_snapshots[index]
+
+    def get_snapshot_count(self):
+        return len(self.all_snapshots)
 
     def get_item_names(self) -> List[str]:
         item_list = []
@@ -102,18 +115,6 @@ class ProjectModel:
             else:
                 assert False, f"Unknow type :{one.item_type}"
 
-        # names = self.orders.get_model_names()
-        # idx = 0
-        # for name in names:
-        #     item_list.append(f"订单-{idx}: {name}")
-        #     idx += 1
-        #
-        # names = self.invoices.get_model_names()
-        # idx = 0
-        # for name in names:
-        #     item_list.append(f"发票-{idx}: {name}")
-        #     idx += 1
-        #
         return item_list
 
 
@@ -170,7 +171,7 @@ def load_project_model(json_obj: Dict[str, Any]) -> ProjectModel:
 
 def load_project_models_from_json(json_obj: Dict[str, Any]) -> List[ProjectModel]:
     projects = get_dict_val(json_obj, "projects")
-    if projects:
+    if not projects:
         return []
 
     output = []
@@ -194,6 +195,9 @@ class ProjectModelManager:
         names = [p.get_project_name() for p in self.projects]
         return names
 
+    def get_project_count(self) -> int:
+        return len(self.projects)
+
     def is_empty(self) -> bool:
         return self.projects is None or len(self.projects) == 0
 
@@ -202,5 +206,5 @@ class ProjectModelManager:
             return None
         return self.projects[idx]
 
-    def get_snapshot_names(self) -> List[str]:
-        return []
+    # def get_snapshot_names(self) -> List[str]:
+    #     return []
