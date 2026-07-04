@@ -157,6 +157,18 @@ def remove_file(filename, mute=True, throws=False):
             if not mute:
                 print("remove file err ", filename, str(e));
 
+def is_empty(v):
+    if v is None or v == "":
+        return True
+    return False
+
+
+def is_not_empty(v):
+    if v is not None and v != "":
+        return True
+    return False
+
+
 
 def beans_to_arrays(beans, names):
     _out = {}
