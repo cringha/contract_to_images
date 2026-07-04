@@ -178,26 +178,32 @@ class ProjectModel:
 
         return item_list
 
-    def to_json(self, filter1: OutputFilter | None = None) -> Dict[str, Any]:
+    def to_json(self, filter1: OutputFilter | None = None) -> Dict[str, Any] | None:
         output = {}
         output["contractId"] = self.project_id
         output["meta"] = self.meta
+        has_value = False
         if self.contract:
             contract = self.contract.to_json(False,filter1)
             if contract is not None:
                 output["contracts"] = contract
+                has_value = True
 
         if self.orders:
             orders = self.orders.to_json(True, filter1)
             if orders is not None:
                 output["orders"] = orders
+                has_value = True
 
         if self.invoices:
             invoices = self.invoices.to_json(True, filter1)
             if invoices is not None:
                 output["invoices"] = invoices
-
-        return output
+                has_value = True
+        if has_value:
+            return output
+        else:
+            return None
 
 
 def load_snapshot(item_type: ProjectItemType, json_obj: Dict[str, Any]) -> SnapshotModel:
