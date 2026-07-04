@@ -6,10 +6,16 @@ from tkinter import ttk, filedialog
 from typing import List, Literal
 import winsound
 from PIL import Image, ImageTk
+import traceback
+from ui.uisnaps.uisnapmodels import ProjectModelManager, ProjectModel, SnapshotModel, OutputFilter
+from uitls.utils import save_to_json
 
-from ui.uisnaps.uisnapmodels import ProjectModelManager, ProjectModel, SnapshotModel
-
-UI_TK_X = Literal['x']  # tk.X
+UI_TK_LEFT: Literal["left"] = "left"
+UI_TK_X: Literal["x"] = "x"
+UI_TK_BOTH: Literal["both"] = "both"
+UI_TK_RIGHT: Literal["right"] = "right"
+UI_TK_SUNKEN: Literal["sunken"] = "sunken"
+CANVAS_BACKGROUND_COLOR = "#e2e2e2"
 
 
 class MainViewer(tk.Tk):
@@ -43,7 +49,7 @@ class MainViewer(tk.Tk):
     def build_ui(self):
         # 顶部下拉栏
         top_frame = ttk.Frame(self)
-        top_frame.pack(fill=tk.X, padx=12, pady=8)
+        top_frame.pack(fill=UI_TK_X, padx=12, pady=8)
 
         ttk.Label(top_frame, text="项目：").grid(row=0, column=0, sticky="w")
         self.cb_proj = ttk.Combobox(top_frame, state="readonly", font=("微软雅黑", 10))
@@ -59,51 +65,55 @@ class MainViewer(tk.Tk):
 
         # 功能按钮栏
         btn_frame = ttk.Frame(self)
-        btn_frame.pack(fill=tk.X, padx=12, pady=4)
-        ttk.Button(btn_frame, text="选择截图根目录", command=self.set_img_root).pack(side=tk.LEFT, padx=4)
-        ttk.Button(btn_frame, text="加载local.project.json", command=self.load_json).pack(side=tk.LEFT, padx=4)
-        ttk.Button(btn_frame, text="上一张", command=self.do_prev_img).pack(side=tk.LEFT, padx=4)
-        ttk.Button(btn_frame, text="下一张", command=self.do_next_img).pack(side=tk.LEFT, padx=4)
-        ttk.Button(btn_frame, text="跳到头部", command=self.jump_head).pack(side=tk.LEFT, padx=4)
-        ttk.Button(btn_frame, text="跳到尾部", command=self.jump_tail).pack(side=tk.LEFT, padx=4)
-        ttk.Button(btn_frame, text="标记/取消", command=self.toggle_mark).pack(side=tk.LEFT, padx=4)
-        ttk.Button(btn_frame, text="标记到末尾", command=self.mark_to_end).pack(side=tk.LEFT, padx=4)
-        ttk.Button(btn_frame, text="保存JSON", command=self.save_clean_json).pack(side=tk.RIGHT, padx=4)
+        btn_frame.pack(fill=UI_TK_X, padx=12, pady=4)
+        ttk.Button(btn_frame, text="选择截图根目录", command=self.set_img_root).pack(side=UI_TK_LEFT, padx=4)
+        ttk.Button(btn_frame, text="加载local.project.json", command=self.load_json).pack(side=UI_TK_LEFT, padx=4)
+        ttk.Button(btn_frame, text="上一张", command=self.do_prev_img).pack(side=UI_TK_LEFT, padx=4)
+        ttk.Button(btn_frame, text="下一张", command=self.do_next_img).pack(side=UI_TK_LEFT, padx=4)
+        ttk.Button(btn_frame, text="跳到头部", command=self.jump_head).pack(side=UI_TK_LEFT, padx=4)
+        ttk.Button(btn_frame, text="跳到尾部", command=self.jump_tail).pack(side=UI_TK_LEFT, padx=4)
+        ttk.Button(btn_frame, text="标记/取消", command=self.toggle_mark).pack(side=UI_TK_LEFT, padx=4)
+        ttk.Button(btn_frame, text="标记到末尾", command=self.mark_to_end).pack(side=UI_TK_LEFT, padx=4)
+
+        ttk.Button(btn_frame, text="上一个文件", command=self.do_pre_snap).pack(side=UI_TK_LEFT, padx=4)
+        ttk.Button(btn_frame, text="下一个文件", command=self.do_next_snap).pack(side=UI_TK_LEFT, padx=4)
+
+        ttk.Button(btn_frame, text="保存JSON", command=self.save_clean_json).pack(side=UI_TK_RIGHT, padx=4)
 
         # 三图容器
         img_box = ttk.Frame(self)
-        img_box.pack(expand=True, fill=tk.BOTH, padx=12, pady=10)
+        img_box.pack(expand=True, fill=UI_TK_BOTH, padx=12, pady=10)
 
         # 左图
         left_wrap = ttk.Frame(img_box)
-        left_wrap.pack(side=tk.LEFT, expand=True, fill=tk.BOTH, padx=5)
+        left_wrap.pack(side=UI_TK_LEFT, expand=True, fill=UI_TK_BOTH, padx=5)
         self.label_left = ttk.Label(left_wrap, text="上一页")
-        self.label_left.pack(fill=tk.X)
-        self.canvas_left = tk.Canvas(left_wrap, bg="#e2e2e2", bd=2, relief=tk.SUNKEN)
-        self.canvas_left.pack(expand=True, fill=tk.BOTH)
+        self.label_left.pack(fill=UI_TK_X)
+        self.canvas_left = tk.Canvas(left_wrap, bg=CANVAS_BACKGROUND_COLOR, bd=2, relief=UI_TK_SUNKEN)
+        self.canvas_left.pack(expand=True, fill=UI_TK_BOTH)
         self.canvas_left.bind("<Button-1>", lambda e: self.do_prev_img())
 
         # 中图
         mid_wrap = ttk.Frame(img_box)
-        mid_wrap.pack(side=tk.LEFT, expand=True, fill=tk.BOTH, padx=5)
+        mid_wrap.pack(side=UI_TK_LEFT, expand=True, fill=UI_TK_BOTH, padx=5)
         self.label_mid = ttk.Label(mid_wrap, text="当前页")
-        self.label_mid.pack(fill=tk.X)
-        self.canvas_mid = tk.Canvas(mid_wrap, bg="#ffffff", bd=2, relief=tk.SUNKEN)
-        self.canvas_mid.pack(expand=True, fill=tk.BOTH)
+        self.label_mid.pack(fill=UI_TK_X)
+        self.canvas_mid = tk.Canvas(mid_wrap, bg=CANVAS_BACKGROUND_COLOR, bd=2, relief=UI_TK_SUNKEN)
+        self.canvas_mid.pack(expand=True, fill=UI_TK_BOTH)
         self.canvas_mid.bind("<Button-1>", lambda e: self.toggle_mark())
 
         # 右图
         right_wrap = ttk.Frame(img_box)
-        right_wrap.pack(side=tk.LEFT, expand=True, fill=tk.BOTH, padx=5)
+        right_wrap.pack(side=UI_TK_LEFT, expand=True, fill=UI_TK_BOTH, padx=5)
         self.label_right = ttk.Label(right_wrap, text="下一页")
-        self.label_right.pack(fill=tk.X)
-        self.canvas_right = tk.Canvas(right_wrap, bg="#e2e2e2", bd=2, relief=tk.SUNKEN)
-        self.canvas_right.pack(expand=True, fill=tk.BOTH)
+        self.label_right.pack(fill=UI_TK_X)
+        self.canvas_right = tk.Canvas(right_wrap, bg=CANVAS_BACKGROUND_COLOR, bd=2, relief=UI_TK_SUNKEN)
+        self.canvas_right.pack(expand=True, fill=UI_TK_BOTH)
         self.canvas_right.bind("<Button-1>", lambda e: self.do_next_img())
 
         # 底部状态栏
-        self.status_label = ttk.Label(self, anchor="w", relief=tk.SUNKEN)
-        self.status_label.pack(fill=tk.X, padx=1, pady=1)
+        self.status_label = ttk.Label(self, anchor="w", relief=UI_TK_SUNKEN)
+        self.status_label.pack(fill=UI_TK_X, padx=1, pady=1)
 
     def update_status(self, extra_msg=""):
         root_txt = self.image_root if self.image_root else "未设置截图目录"
@@ -140,6 +150,9 @@ class MainViewer(tk.Tk):
             self.refresh_all_view()
             self.update_status("JSON加载完成")
         except Exception as e:
+            msg = traceback.format_stack()
+            print(msg)
+            # traceback.print_stack()
             self.update_status(f"加载失败：{str(e)}")
 
     def refresh_proj_combo(self):
@@ -164,6 +177,7 @@ class MainViewer(tk.Tk):
     def refresh_item_combo(self):
         if self.all_projects.is_empty():
             self.cb_item["values"] = []
+            self.cb_item.set('')
             return
 
         proj = self.get_current_project()
@@ -175,7 +189,8 @@ class MainViewer(tk.Tk):
         if item_list:
             self.cur_img_pos = 0
             self.set_cur_snapshot_idx(0)
-
+        else:
+            self.cb_item.set('')
 
     def on_proj_switch(self, event):
         old_idx = self.cur_proj_idx
@@ -195,8 +210,7 @@ class MainViewer(tk.Tk):
         self.cur_img_pos = 0
         self.refresh_all_view()
 
-
-    def set_cur_proj_idx(self, new_pos ):
+    def set_cur_proj_idx(self, new_pos):
         old_idx = self.cur_proj_idx
         self.cur_proj_idx = new_pos
         # 设定下拉列表的显示
@@ -205,10 +219,13 @@ class MainViewer(tk.Tk):
             self.refresh_item_combo()
 
     def set_cur_snapshot_idx(self, new_pos):
-        self.cur_snapshot_idx = new_pos
-        # 设定下拉列表的显示
-        self.cb_item.current(new_pos)
-
+        if new_pos <0:
+            self.cur_snapshot_idx = new_pos
+            self.cb_item["values"] = []
+        else:
+            self.cur_snapshot_idx = new_pos
+            # 设定下拉列表的显示
+            self.cb_item.current(new_pos)
 
     def get_current_snap_obj(self) -> SnapshotModel | None:
         proj = self.get_current_project()
@@ -220,8 +237,8 @@ class MainViewer(tk.Tk):
         snapshot = proj.get_snapshot_by_index(idx)
         if snapshot is None:
             # 没有找到
-            assert False, f"Not found snapshot by index {idx}"
-            return
+            print(f"Not found snapshot by index {idx}")
+            return None
         return snapshot
 
     # 移到上一个 SNAPSHOT
@@ -231,6 +248,10 @@ class MainViewer(tk.Tk):
             return False
 
         idx = self.cur_snapshot_idx
+        if idx < 0:
+            # 这个项目没有 截图
+            winsound.Beep(600, 150)
+            return False
         snapshot = proj.get_snapshot_by_index(idx - 1)
         if snapshot is None:
             # 已经是第一个
@@ -248,7 +269,12 @@ class MainViewer(tk.Tk):
                 self.set_cur_snapshot_idx(snap_pos)
                 return True
             else:
-                assert False, f"Project snaps empty  {proj1.get_project_name()}"
+
+                self.cur_img_pos = 0
+                self.set_cur_snapshot_idx(-1)
+                # assert False, f"Project snaps empty  {proj1.get_project_name()}"
+                return True
+
         else:
             # 移到上一个，并且图片显示最后一个
             self.set_cur_snapshot_idx(idx - 1)
@@ -262,6 +288,11 @@ class MainViewer(tk.Tk):
             return False
 
         idx = self.cur_snapshot_idx
+        if idx < 0:
+            # 这个项目 没有截图， 直接去
+            proj1 = self.goto_next_project()
+            return proj1 is not None
+
         snapshot = proj.get_snapshot_by_index(idx + 1)
         if snapshot is None:
             # 已经是最后一个
@@ -282,7 +313,7 @@ class MainViewer(tk.Tk):
             return None
         else:
 
-            self.set_cur_proj_idx( self.cur_proj_idx + 1 )
+            self.set_cur_proj_idx(self.cur_proj_idx + 1)
             self.cur_img_pos = 0
             self.set_cur_snapshot_idx(0)
             return proj
@@ -294,8 +325,8 @@ class MainViewer(tk.Tk):
             return None
         else:
             self.set_cur_proj_idx(self.cur_proj_idx - 1)
-            self.cur_img_pos = 0
-            self.set_cur_snapshot_idx(0)
+            # self.cur_img_pos = 0
+            # self.set_cur_snapshot_idx(0)
             return proj
 
     def go_next_snap(self):
@@ -308,6 +339,33 @@ class MainViewer(tk.Tk):
 
         idx = self.cur_snapshot_idx
 
+    def do_next_snap(self):
+        if self.all_projects.is_empty():
+            winsound.Beep(600, 150)
+            return
+        try:
+            need_update = self.goto_next_snapshot()
+            if need_update:
+                self.refresh_all_view()
+
+        except Exception as e:
+            self.update_status(f"浏览错误：{str(e)}")
+            winsound.Beep(800, 200)
+            return
+    def do_pre_snap(self):
+        if self.all_projects.is_empty():
+            winsound.Beep(600, 150)
+            return
+        try:
+            need_update = self.goto_pre_snapshot()
+            if need_update:
+                self.refresh_all_view()
+
+        except Exception as e:
+            self.update_status(f"浏览错误：{str(e)}")
+            winsound.Beep(800, 200)
+            return
+
 
     def do_next_img(self):
 
@@ -319,22 +377,24 @@ class MainViewer(tk.Tk):
         try:
             snap = self.get_current_snap_obj()
             if snap is None:
-                return
-
-            cur_pos = self.cur_img_pos
-            total = snap.get_snapshot_count()
-
-            end_pos = total - 1
-            if cur_pos < end_pos:
-                cur_pos += 1
-                self.cur_img_pos = cur_pos
-                need_update = True
-            elif cur_pos == end_pos:  # 最后一个位置
                 # 切换到下一个SNAP
                 need_update = self.goto_next_snapshot()
 
             else:
-                winsound.Beep(600, 150)
+                cur_pos = self.cur_img_pos
+                total = snap.get_snapshot_count()
+
+                end_pos = total - 1
+                if cur_pos < end_pos:
+                    cur_pos += 1
+                    self.cur_img_pos = cur_pos
+                    need_update = True
+                elif cur_pos == end_pos:  # 最后一个位置
+                    # 切换到下一个SNAP
+                    need_update = self.goto_next_snapshot()
+
+                else:
+                    winsound.Beep(600, 150)
 
 
         except Exception as e:
@@ -355,28 +415,31 @@ class MainViewer(tk.Tk):
         try:
             snap = self.get_current_snap_obj()
             if snap is None:
-                return
-            cur_pos = self.cur_img_pos
-            if cur_pos > 0:
-                cur_pos -= 1
-                self.cur_img_pos = cur_pos
-                need_update = True
-            elif cur_pos == 0:  # 第一个图片了
                 # 切换到上一个SNAP
                 need_update = self.goto_pre_snapshot()
             else:
-                winsound.Beep(600, 150)
+                cur_pos = self.cur_img_pos
+                if cur_pos > 0:
+                    cur_pos -= 1
+                    self.cur_img_pos = cur_pos
+                    need_update = True
+                elif cur_pos == 0:  # 第一个图片了
+                    # 切换到上一个SNAP
+                    need_update = self.goto_pre_snapshot()
+                else:
+                    winsound.Beep(600, 150)
 
 
         except Exception as e:
+            traceback.print_exc()
             self.update_status(f"浏览错误：{str(e)}")
             winsound.Beep(800, 200)
             return
 
         if need_update:
             # self.sync_combo_select()
-            self.refresh_all_view()
 
+            self.refresh_all_view()
 
     def jump_head(self):
         if self.all_projects.is_empty():
@@ -430,20 +493,29 @@ class MainViewer(tk.Tk):
     def mark_to_end(self):
         if self.all_projects.is_empty():
             return
-        return
-        # try:
-        #     snap = self.get_current_snap_obj()
-        #     snap_list = snap["snapshots"]
-        #     for idx in range(self.cur_img_pos, len(snap_list)):
-        #         self.marked_file_set.add(snap_list[idx])
-        #     self.update_status(f"已标记第{self.cur_img_pos + 1}张至末尾全部截图")
-        #     self.refresh_all_view()
-        # except Exception as e:
-        #     self.update_status(f"批量标记失败：{str(e)}")
+        try:
+            snap = self.get_current_snap_obj()
+            if snap is None:
+                return
+
+            cur = self.cur_img_pos
+            end_pos = snap.get_last_pos()
+            for i in range(cur, end_pos + 1):
+                filename = snap.get_snapshot_url(i)
+                if filename is None:
+                    assert False, f"why filename is empty , {i} , {snap.name}?"
+                    continue
+                if filename in self.marked_file_set:
+                    self.marked_file_set.remove(filename)
+                else:
+                    self.marked_file_set.add(filename)
+
+            self.refresh_all_view()
+        except Exception as e:
+            self.update_status(f"标记失败：{str(e)}")
 
 
-
-    def _draw_one_canvas(self, snap: SnapshotModel, cur_img: int,
+    def _draw_one_canvas(self, name: str, snap: SnapshotModel, cur_img: int,
                          tk_canvas: tk.Canvas,
                          tk_label: ttk.Label, cache_idx: int):
         # 左画布
@@ -455,7 +527,7 @@ class MainViewer(tk.Tk):
             h = tk_canvas.winfo_height()
             tk_canvas.create_rectangle(10, 10, w - 10, h - 10, fill="#d1d1d1", outline="#666")
         else:
-            label_text = f'{cur_img+1}/{snap.get_snapshot_count()}'
+            label_text = f'{cur_img + 1}/{snap.get_snapshot_count()}'
             tk_canvas.delete("all")
             tk_label.config(text=label_text)
             full_path = os.path.join(self.image_root, image_url)
@@ -463,6 +535,7 @@ class MainViewer(tk.Tk):
 
             w_can = tk_canvas.winfo_width()
             h_can = tk_canvas.winfo_height()
+            print(f"in canvas {name}, w : {w_can}, h: {h_can}")
             im.thumbnail((w_can - 30, h_can - 40), Image.Resampling.LANCZOS)
             img_tk = ImageTk.PhotoImage(im)
             self.img_cache[cache_idx] = img_tk
@@ -473,16 +546,20 @@ class MainViewer(tk.Tk):
     def show_error(self, msg):
         self.update_status(msg)
 
+
+    def _clear_canvas(self):
+        self.canvas_left.delete("all")
+        self.canvas_mid.delete("all")
+        self.canvas_right.delete("all")
+
+        self.label_left.config(text="无")
+        self.label_mid.config(text="无")
+        self.label_right.config(text="无")
+
     def refresh_all_view(self):
         # 么有初始化
         if self.all_projects.is_empty():
-            self.canvas_left.delete("all")
-            self.canvas_mid.delete("all")
-            self.canvas_right.delete("all")
-
-            self.label_left.config(text="无")
-            self.label_mid.config(text="无")
-            self.label_right.config(text="无")
+            self._clear_canvas()
             return
 
         cur_img = self.cur_img_pos
@@ -490,11 +567,12 @@ class MainViewer(tk.Tk):
 
             snap = self.get_current_snap_obj()
             if snap is None:
+                self._clear_canvas()
                 return
             # 左画布
-            self._draw_one_canvas(snap, cur_img - 1, self.canvas_left, self.label_left, 0)
-            self._draw_one_canvas(snap, cur_img, self.canvas_mid, self.label_mid, 1)
-            self._draw_one_canvas(snap, cur_img + 1, self.canvas_right, self.label_right, 2)
+            self._draw_one_canvas("left", snap, cur_img - 1, self.canvas_left, self.label_left, 0)
+            self._draw_one_canvas("min", snap, cur_img, self.canvas_mid, self.label_mid, 1)
+            self._draw_one_canvas("right", snap, cur_img + 1, self.canvas_right, self.label_right, 2)
 
         except Exception as e:
             self.canvas_left.delete("all")
@@ -506,72 +584,21 @@ class MainViewer(tk.Tk):
             self.show_error(f'{e}')
         return
 
-    #
-    # def refresh_all_view1(self):
-    #     if not self.all_projects:
-    #         self.canvas_left.delete("all")
-    #         self.canvas_mid.delete("all")
-    #         self.canvas_right.delete("all")
-    #         self.label_left.config(text="无")
-    #         self.label_mid.config(text="无")
-    #         self.label_right.config(text="无")
-    #         return
-    #     p = self.cur_proj_idx
-    #     st = self.cur_snap_type
-    #     g = self.cur_group_idx
-    #     try:
-    #         snap = self.get_current_snap_obj()
-    #     except Exception:
-    #         self.canvas_left.delete("all")
-    #         self.canvas_mid.delete("all")
-    #         self.canvas_right.delete("all")
-    #         self.label_left.config(text="数据异常")
-    #         self.label_mid.config(text="数据异常")
-    #         self.label_right.config(text="数据异常")
-    #         return
-    #     total = len(snap["snapshots"])
-    #     # # 左画布
-    #     # if self.cur_img_pos - 1 < 0:
-    #     #     self.canvas_left.delete("all")
-    #     #     self.label_left.config(text="无")
-    #     #     w = self.canvas_left.winfo_width()
-    #     #     h = self.canvas_left.winfo_height()
-    #     #     self.canvas_left.create_rectangle(10, 10, w - 10, h - 10, fill="#d1d1d1", outline="#666")
-    #     # else:
-    #     #     self.draw_canvas(self.canvas_left, self.label_left, p, st, g, 0)
-    #     # 中画布
-    #     self.draw_canvas(self.canvas_mid, self.label_mid, p, st, g, 1)
-    #     # 右画布
-    #     if self.cur_img_pos + 1 >= total:
-    #         self.canvas_right.delete("all")
-    #         self.label_right.config(text="无")
-    #         w = self.canvas_right.winfo_width()
-    #         h = self.canvas_right.winfo_height()
-    #         self.canvas_right.create_rectangle(10, 10, w - 10, h - 10, fill="#d1d1d1", outline="#666")
-    #     else:
-    #         self.draw_canvas(self.canvas_right, self.label_right, p, st, g, 2)
-
     def save_clean_json(self):
         if not self.json_full_path or not self.all_projects:
             self.update_status("未加载数据，无法保存")
             return
-        new_data = copy.deepcopy({"projects": self.all_projects})
-        projects = new_data["projects"]
-        for proj in projects:
-            # 清理合同截图
-            for c in proj["contracts"]:
-                c["snapshots"] = [f for f in c["snapshots"] if f not in self.marked_file_set]
-            # 清理订单
-            for group in proj["orders"]:
-                for order in group:
-                    order["snapshots"] = [f for f in order["snapshots"] if f not in self.marked_file_set]
-            # 清理发票
-            for group in proj["invoices"]:
-                for inv in group:
-                    inv["snapshots"] = [f for f in inv["snapshots"] if f not in self.marked_file_set]
+
+        class MyFilter(OutputFilter):
+            def accept(self1, name: str) -> bool:
+                if name not in self.marked_file_set:
+                    return True
+                return False
+
+        output = self.all_projects.to_json(MyFilter())
+
         try:
-            with open(self.json_full_path, "w", encoding="utf-8") as f:
-                json.dump(new_data, f, ensure_ascii=False, indent=2)
+            save_to_json(self.json_full_path, output)
             self.marked_file_set.clear()
             self.refresh_all_view()
             self.update_status("JSON保存完成，已清除标记截图")

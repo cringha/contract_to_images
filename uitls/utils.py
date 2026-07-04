@@ -12,6 +12,7 @@ from datetime import datetime
 import os
 from pathlib import Path
 
+
 # import yaml
 
 
@@ -99,10 +100,12 @@ def file_size(file_path):
 
 
 def get_dict_val(obj, name):
-    if name in obj:
-        return obj[name]
-    return None
-
+    try:
+        if name in obj:
+            return obj[name]
+        return None
+    except Exception as e:
+        raise e
 
 def get_extension(filename):
     return Path(filename).suffix
@@ -414,6 +417,7 @@ def get_tmp_dir():
 
     return pathname;
 
+
 def get_user_home():
     user_home = os.environ.get('USERPROFILE', os.environ.get('HOME'))
     return user_home
@@ -427,9 +431,9 @@ def get_rand_str(k=20) -> str:
     return res
 
 
-
 import shutil
 import os
+
 
 def clear_directory(directory):
     for filename in os.listdir(directory):
@@ -443,3 +447,14 @@ def clear_directory(directory):
             print(f'Failed to delete {file_path}. Reason: {e}')
 
 
+def save_to_json(output_file: str, obj):
+    dest_file = Path(output_file)
+    file_name = dest_file.stem
+    counter = 1
+    while dest_file.exists():
+        dest_file = dest_file.parent / f"{file_name}_{counter}{dest_file.suffix}"
+        counter += 1
+
+    output_file1 = str(dest_file)
+    with open(output_file1, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False, indent=2)
