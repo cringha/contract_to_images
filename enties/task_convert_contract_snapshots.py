@@ -13,6 +13,7 @@ from uitls.utils import clear_directory
 
 IMAGE_SIZE = 150
 
+
 #
 # def get_last_by_filename_glob(directory, pattern="*"):
 #     dir_path = Path(directory)
@@ -33,11 +34,11 @@ def read_all_contract_subpath(contract_base_path: Path) -> List[
     # 获取所有匹配的文件（排除子目录）
     # files = [f for f in contract_base_path.glob(pattern)]
 
-    log =get_log()
+    log = get_log()
     all_path = [f for f in contract_base_path.iterdir() if f.is_dir()]
 
     if not all_path:
-        log.error (f"未找到 {contract_base_path} 下的二級目錄")
+        log.error(f"未找到 {contract_base_path} 下的二級目錄")
         return []
 
     out = []
@@ -145,14 +146,14 @@ def get_contract_file_in_path(contract_base_path: Path, accept_suffix):
             continue
         file_suffix = f.suffix.lower()
         if file_suffix not in accept_suffix:
-            log.error (f"warn: get contract not accept suffix, {f.name} , {accept_suffix}")
+            log.error(f"warn: get contract not accept suffix, {f.name} , {accept_suffix}")
             continue
         files.append(f)
     return files
 
 
 def make_contract_file_snapshots(output_image_path: Path, prefix: str, file: Path,
-                                 contract_id: str) -> ContractSnapshotFile:
+                                 contract_id: str, max_pages: int = 0) -> ContractSnapshotFile:
     log = get_log()
 
     suffix = file.suffix.lower()
@@ -167,7 +168,7 @@ def make_contract_file_snapshots(output_image_path: Path, prefix: str, file: Pat
             # image_full_name = output_image_path / image_name
             return image_name1
 
-        file_list = snap_pdf_all_page(output_image_path, file, contract_id, gen_contract_image_file_name, 30)
+        file_list = snap_pdf_all_page(output_image_path, file, contract_id, gen_contract_image_file_name, max_pages)
         out.add_all_images(file_list)
     else:
         image_name2 = f"{contract_id}-{prefix}-000{suffix}"
@@ -175,23 +176,24 @@ def make_contract_file_snapshots(output_image_path: Path, prefix: str, file: Pat
 
         try:
             shutil.copy2(file, image_full_name)
-            log.debug (f"已复制：{contract_id} ,  {str(image_full_name)[-30:]}")
+            log.debug(f"已复制：{contract_id} ,  {str(image_full_name)[-30:]}")
             out.add_image_file(image_name2)
         except Exception as e:
-            log.error (f"复制失败 {file}  {image_full_name}: {e}")
+            log.error(f"复制失败 {file}  {image_full_name}: {e}")
 
     return out
 
 
 def process_contract_simple_path(contract_base_path: Path, output_image_path: Path,
                                  target_contract_id: str,
-                                 contract_id: str, contract_type: str, accept_suffix) -> List[ContractSnapshotFile]:
+                                 contract_id: str, contract_type: str, accept_suffix, max_pages: int = 0) -> List[
+    ContractSnapshotFile]:
     log = get_log()
 
     contract_snapshot_file_list = []
     contract_parent_path = contract_base_path / contract_id
     if not contract_parent_path.exists():
-        log.warning (f"Contract path not exist , {contract_parent_path}")
+        log.warning(f"Contract path not exist , {contract_parent_path}")
         return contract_snapshot_file_list
     contract_files = get_contract_file_in_path(contract_parent_path, accept_suffix)
     if contract_files is None:
@@ -203,7 +205,7 @@ def process_contract_simple_path(contract_base_path: Path, output_image_path: Pa
     for file in contract_files:
         index = index + 1
         contract_snapshot_file = make_contract_file_snapshots(output_image_path, f"{contract_type}-{index:02}", file,
-                                                              target_contract_id)
+                                                              target_contract_id, max_pages)
         contract_snapshot_file_list.append(contract_snapshot_file)
 
     return contract_snapshot_file_list
@@ -211,14 +213,14 @@ def process_contract_simple_path(contract_base_path: Path, output_image_path: Pa
 
 # 处理一个 合同对象（ 框架+订单 或者 单独合同 ）
 def process_contract_obj(contract_base_path: Path, invoice_base_path: Path | None, output_image_path: Path,
-                         contract: ContractObj):
+                         contract: ContractObj, max_pages: int = 0):
     # snap_pdf_all_pagecontract_base_path: Path,
 
     # 合同 PDF 文件
     main_file_list = process_contract_simple_path(contract_base_path, output_image_path,
                                                   contract.contract_id,
                                                   contract.contract_id,
-                                                  "合同-MAIN", ACCEPT_SUFFIX_CONTRACT)
+                                                  "合同-MAIN", ACCEPT_SUFFIX_CONTRACT, max_pages)
 
     contract.set_main_file(main_file_list)
 
@@ -228,7 +230,7 @@ def process_contract_obj(contract_base_path: Path, invoice_base_path: Path | Non
         main_invoice_file_list = process_contract_simple_path(invoice_base_path, output_image_path,
                                                               contract.contract_id,
                                                               contract.contract_id,
-                                                              "合同发票-INV-M", ACCEPT_SUFFIX_ORDERS)
+                                                              "合同发票-INV-M", ACCEPT_SUFFIX_ORDERS, max_pages)
         if main_invoice_file_list is not None and len(main_invoice_file_list) > 0:
             invoice_snapshot_files.append(main_invoice_file_list)
 
@@ -240,7 +242,7 @@ def process_contract_obj(contract_base_path: Path, invoice_base_path: Path | Non
         order_snapshot_file = process_contract_simple_path(contract_base_path, output_image_path,
                                                            contract.contract_id,
                                                            order_file,
-                                                           f"订单-ORDER-{index}", ACCEPT_SUFFIX_ORDERS)
+                                                           f"订单-ORDER-{index}", ACCEPT_SUFFIX_ORDERS, max_pages)
         if order_snapshot_file is not None and len(order_snapshot_file) > 0:
             order_snapshot_files.append(order_snapshot_file)
 
@@ -249,7 +251,8 @@ def process_contract_obj(contract_base_path: Path, invoice_base_path: Path | Non
             order_invoice_file_list = process_contract_simple_path(invoice_base_path, output_image_path,
                                                                    contract.contract_id,
                                                                    order_file,
-                                                                   f"订单发票-INV-O-{index}", ACCEPT_SUFFIX_ORDERS)
+                                                                   f"订单发票-INV-O-{index}",
+                                                                   ACCEPT_SUFFIX_ORDERS, max_pages)
 
             if order_invoice_file_list is not None and len(order_invoice_file_list) > 0:
                 invoice_snapshot_files.append(order_invoice_file_list)
@@ -264,24 +267,23 @@ def read_contracts_cases(
         invoice_base_root,
         output_image_dir,
         excel_file_name,
-        cb_info = None,
+        cb_info=None,
         contract_sheet_name="Contract",
         col_contract_id="项目编号",
-        col_contract_name="合同名称"
+        col_contract_name="合同名称", max_pages: int = 0
 ) -> List[ContractObj] | None:
-
     log = get_log()
 
     contract_base_path = Path(contract_base_root)
     if not contract_base_path.exists():
-        log .error (f"Base contract path, not exist , {contract_base_root}")
+        log.error(f"Base contract path, not exist , {contract_base_root}")
         return None
 
     invoice_base_path = None
     if invoice_base_root is not None and invoice_base_root != "":
         invoice_base_path = Path(invoice_base_root)
         if not invoice_base_path.exists():
-            log .error (f"Base invoice path, not exist , {invoice_base_root}")
+            log.error(f"Base invoice path, not exist , {invoice_base_root}")
             return None
 
     output_image_path = Path(output_image_dir)
@@ -302,24 +304,25 @@ def read_contracts_cases(
 
         contract_id = str(contract_id)
 
-        if cb_info :
-            result2 = cb_info( contract_id, project_contract_name )
-            if result2 == True :
-                return  None
+        if cb_info:
+            result2 = cb_info(contract_id, project_contract_name)
+            if result2 == True:
+                return None
 
         project_contract_obj = find_contract_and_orders(all_contract_paths, contract_id)
         if project_contract_obj is None:
-            log .error (f"Not found contract id {contract_id} in root:{contract_base_path}")
+            log.error(f"Not found contract id {contract_id} in root:{contract_base_path}")
             continue
 
         project_contract_obj.set_meta(project)
 
         try:
-            log .info  (f"Process contract , {contract_id} - {project_contract_name}")
-            process_contract_obj(contract_base_path, invoice_base_path, output_image_path, project_contract_obj)
+            log.info(f"Process contract , {contract_id} - {project_contract_name}")
+            process_contract_obj(contract_base_path, invoice_base_path, output_image_path, project_contract_obj,
+                                 max_pages)
             project_contract_obj_list.append(project_contract_obj)
         except Exception as e:
-            log .error (f"Process contract, {contract_id} error:{e}")
+            log.error(f"Process contract, {contract_id} error:{e}")
 
     return project_contract_obj_list
 
@@ -375,25 +378,24 @@ def dump_project_contract_obj_list(project_contract_obj_list: List[ContractObj])
     return obj
 
 
-def convert_contract_snapshots(args, cb_info ):
-
+def convert_contract_snapshots(args, cb_info):
     log = get_log()
 
     if args.input_xlsx is None or args.input_xlsx == "":
-        log.error ("--input-xlsx 空")
+        log.error("--input-xlsx 空")
         return False
 
     if not os.path.exists(args.input_xlsx):
-        log.error ("file not exist , {args.input_xlsx}")
+        log.error("file not exist , {args.input_xlsx}")
         return False
 
     if args.contract_base_root is None or args.contract_base_root == "":
-        log.error ("--contract-base-root 空")
+        log.error("--contract-base-root 空")
         return False
 
     invoice_base_root = None
     if args.invoice_base_root is None or args.invoice_base_root == "":
-        log.error ("--invoice-base-root 空")
+        log.error("--invoice-base-root 空")
         return False
 
     excel_file_name = args.input_xlsx
@@ -403,11 +405,14 @@ def convert_contract_snapshots(args, cb_info ):
     invoice_base_root = args.invoice_base_root
     output_images_dir = args.output_image_root  # "./test.images"
 
+    contract_sheet_name = args.sheet_name_contract  # "Contract",
+    col_contract_id = args.col_project_id  # "项目编号",
+    col_contract_name = args.col_contract_name  # "合同名称"
 
-
-    contract_sheet_name = args.sheet_name_contract# "Contract",
-    col_contract_id = args.col_project_id # "项目编号",
-    col_contract_name = args.col_contract_name # "合同名称"
+    if args.max_pages_per_pdf is not None and  args.max_pages_per_pdf != "":
+        max_pages = int(args.max_pages_per_pdf )
+    else:
+        max_pages = 0
 
     project_contract_obj_list = read_contracts_cases(contract_base_root,
                                                      invoice_base_root,
@@ -416,7 +421,8 @@ def convert_contract_snapshots(args, cb_info ):
                                                      cb_info,
                                                      contract_sheet_name,
                                                      col_contract_id,
-                                                     col_contract_name
+                                                     col_contract_name,
+                                                     max_pages
                                                      )
     if project_contract_obj_list is None:
         return False
@@ -426,7 +432,6 @@ def convert_contract_snapshots(args, cb_info ):
         # s = to_json_str(dump_obj1)
         # f.write(s)
         json.dump(dump_obj1, f, ensure_ascii=False, indent=4)
-        log.info  (f"save json file {json_path}")
+        log.info(f"save json file {json_path}")
 
     return True
-

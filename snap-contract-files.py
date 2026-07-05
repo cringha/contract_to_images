@@ -30,7 +30,11 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--output-file", help="输出的JSON文件; default: %(default)s",
                         default="./local-contracts.json")
 
+    parser.add_argument("--max-pages-per-pdf",
+                        help="每个合同做多截取多少页 ; default: %(default)s",
+                        default="30")
 
+    # max_pages_per_pdf
     try:
         args = parser.parse_args()
 
