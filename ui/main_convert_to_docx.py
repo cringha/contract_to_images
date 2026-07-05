@@ -189,6 +189,7 @@ class ContractSnapApp:
                 self.logger.info("===== 任务执行完成 =====")
 
         except Exception as e:
+            self.logger.error(e)
             self.logger.error(f"任务异常: {e}")
             self.set_status(f"任务异常: {str(e)}")
         finally:

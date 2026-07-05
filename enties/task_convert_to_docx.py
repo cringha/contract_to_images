@@ -1,8 +1,9 @@
-import argparse
+
 import os
-import traceback
+
 from pathlib import Path
 from typing import Dict, Any
+
 
 from docx.shared import Mm
 from docxtpl import DocxTemplate, InlineImage
@@ -43,6 +44,68 @@ def get_images_file_in_path(image_base_path: Path, accept_suffix) -> Dict[str, S
         files[f.name] = SnapshotInline(f)
     return files
 
+PAGE_WIDTH_DEFAULT = 150
+PAGE_HEIGHT_DEFAULT = 210
+# from PIL import Image
+#
+# from docxtpl import DocxTemplate, InlineImage
+# from docx.shared import Cm, Pt
+# from docx.oxml import OxmlElement
+# from docx.oxml.ns import qn
+#
+# def set_picture_border(inline_img, line_width_pt=1, color_hex="000000"):
+#     """
+#     给InlineImage图片添加实线边框
+#     :param inline_img: InlineImage对象
+#     :param line_width_pt: 边框粗细，单位磅pt
+#     :param color_hex: 十六进制颜色，黑色000000
+#     """
+#     # 获取图片底层spPr绘图属性
+#     pic = inline_img._inline.graphic.graphicData.pic
+#     spPr = pic.get_or_add_spPr()
+#
+#     # 创建线条节点 a:ln
+#     ln = OxmlElement("a:ln")
+#     # 线条宽度：1pt = 12700 EMU
+#     ln.set(qn("w"), str(int(line_width_pt * 12700)))
+#     # 实线端点样式
+#     ln.set(qn("cap"), "sq")
+#
+#     # 设置纯色填充（黑色）
+#     solid_fill = OxmlElement("a:solidFill")
+#     srgb_clr = OxmlElement("a:srgbClr")
+#     srgb_clr.set(qn("val"), color_hex)
+#     solid_fill.append(srgb_clr)
+#     ln.append(solid_fill)
+#
+#     # 线条加入绘图属性
+#     spPr.append(ln)
+#
+# def set_img_border(inline_img, line_pt=1, color_hex="000000"):
+#     """给docxtpl.InlineImage 添加黑色实线边框"""
+#     # 核心：docxtpl InlineImage 内置 _pic 对象，替代原来的 _inline
+#     pic = inline_img._pic
+#     spPr = pic.get_or_add_spPr()
+#
+#     # 创建线条 a:ln
+#     ln = OxmlElement("a:ln")
+#     emu = int(line_pt * 12700)
+#     ln.set(qn("w"), str(emu))
+#     ln.set(qn("cap"), "sq")
+#
+#     # 纯色填充
+#     solid = OxmlElement("a:solidFill")
+#     clr = OxmlElement("a:srgbClr")
+#     clr.set(qn("val"), color_hex)
+#     solid.append(clr)
+#     ln.append(solid)
+#
+#     spPr.append(ln)
+# def get_image_w_h(filename):
+#     image = Image.open(filename)
+#     # 获取图片的尺寸
+#     width, height = image.size
+#     return image.size
 
 def pre_process_snap_file(tpl, image_files: Dict[str, SnapshotInline]):
     if image_files is None:
@@ -56,7 +119,17 @@ def pre_process_snap_file(tpl, image_files: Dict[str, SnapshotInline]):
     for key, snap_img in image_files.items():
         snap_img.inline_image = None
         vv = str(snap_img.image_path)
-        snap_img.inline_image = InlineImage(tpl, vv, width=Mm(IMAGE_SIZE))
+        #
+        # w,h = get_image_w_h(vv)
+        # if h > w :
+        #     snap_img.inline_image = InlineImage(tpl, vv, height=Mm(PAGE_HEIGHT_DEFAULT))# width=Mm(IMAGE_SIZE))
+        # else:
+        #     snap_img.inline_image = InlineImage(tpl, vv,   width=Mm(PAGE_WIDTH_DEFAULT))
+
+        snap_img.inline_image = InlineImage(tpl, vv, width=Mm(PAGE_WIDTH_DEFAULT))
+        # 3. 设置黑色实线边框，粗细1磅
+        # set_img_border(snap_img.inline_image, line_pt=1, color_hex="000000")
+
         output[key] = snap_img
         logger.info (f"proc inline , {key}")
     return output
