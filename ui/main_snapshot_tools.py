@@ -26,6 +26,9 @@ UI_TK_SUNKEN: Literal["sunken"] = "sunken"
 CANVAS_BACKGROUND_COLOR = "#e2e2e2"
 CANVAS2_BACKGROUND_COLOR = "#e2e2f2"
 
+# 配置文件
+CONFIG_FILE = "config-covert-contract-snapshots.json"
+
 
 class MarkerPos:
     def __init__(self, x, y):
@@ -105,8 +108,11 @@ class MainViewer(tk.Tk):
         self.state('zoomed')
 
         # 全局数据
+        config_dict = self.load_config()
+
+
         self.json_full_path = ""
-        self.image_root = r"D:\dev\pytools\project1\image_root"
+        self.image_root = config_dict.get("output-image-root", "") # r"D:\dev\pytools\project1\image_root"
         self.all_projects: ProjectModelManager = ProjectModelManager()
         self.marked_file_set = MarkerManager()
 
@@ -129,8 +135,28 @@ class MainViewer(tk.Tk):
         self.bind("<Down>", lambda e: self.do_next_snap())
 
         self.update_status()
+        self.update()
+
+        default_json_path = config_dict.get("output-file", "")
+        if default_json_path is not None and default_json_path != "":
+            self.load_json_file(default_json_path)
+
+
+
+
+    def load_config(self):
+        if os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                self.logger.error(f"加载配置失败: {e}")
+        return {}
 
     def build_ui(self):
+
+
+
         # 顶部下拉栏
         top_frame = ttk.Frame(self)
         top_frame.pack(fill=UI_TK_X, padx=12, pady=8)
@@ -146,6 +172,8 @@ class MainViewer(tk.Tk):
         self.cb_item.grid(row=0, column=3, sticky="ew", padx=6)
         top_frame.columnconfigure(index=3, weight=1)
         self.cb_item.bind("<<ComboboxSelected>>", self.on_item_switch)
+
+        self.bind("<MouseWheel>", self.on_mousewheel)
 
         # 功能按钮栏
         btn_frame = ttk.Frame(self)
@@ -226,29 +254,29 @@ class MainViewer(tk.Tk):
             self.update_status("已更新截图根目录")
             self.refresh_all_view()
 
-    def load_json(self):
-        path = filedialog.askopenfilename(filetypes=[("JSON文件", "*.json")], initialfile="local.project.json")
-        if not path:
-            return
+    def load_json_file(self, new_path ):
         try:
-
-            self.all_projects.load_from_json(path)
-            # with open(path, "r", encoding="utf-8") as f:
-            #     raw = json.load(f)
-            #     self.all_projects = load_project_models_from_json(raw)  # raw["projects"]
-
-            self.json_full_path = path
+            self.all_projects.load_from_json(new_path)
+            self.json_full_path = new_path
             self.marked_file_set.clear()
-            self.cur_proj_idx = -1
-            self.cur_img_pos = -1
+            self.cur_proj_idx = 0
+            self.cur_img_pos = 0
             self.refresh_proj_combo()
             self.refresh_all_view()
             self.update_status("JSON加载完成")
         except Exception as e:
             # msg = traceback.format_stack()
-            self.logger.debug(f"load json error {path} - {e}", e)
+            self.logger.debug(f"load json error {new_path} - {e}", e)
             # traceback.print_stack()
             self.update_status(f"加载失败：{str(e)}")
+
+
+    def load_json(self):
+        path = filedialog.askopenfilename(filetypes=[("JSON文件", "*.json")], initialfile="local.project.json")
+        if not path:
+            return
+
+        self.load_json_file(path)
 
     def refresh_proj_combo(self):
         if self.all_projects.is_empty():
@@ -259,7 +287,7 @@ class MainViewer(tk.Tk):
 
         # TODO: here
         # self.cb_proj.current(self.cur_proj_idx)
-        self.set_cur_proj_idx(0)
+        self.set_cur_proj_idx(0, True )
         self.refresh_item_combo()
 
     def get_current_project(self) -> None | ProjectModel:
@@ -288,6 +316,14 @@ class MainViewer(tk.Tk):
         else:
             self.cb_item.set('')
 
+    def on_mousewheel(self, event):
+        if event.delta > 0:
+            # print(f"in mousewheel , {event.delta}")
+            self.do_prev_img()
+        else:
+            # print(f"in mousewheel , {event.delta}")
+            self.do_next_img()
+
     def on_proj_switch(self, event):
         old_idx = self.cur_proj_idx
         self.cur_proj_idx = self.cb_proj.current()
@@ -306,11 +342,11 @@ class MainViewer(tk.Tk):
         self.cur_img_pos = 0
         self.refresh_all_view()
 
-    def set_cur_proj_idx(self, new_pos):
+    def set_cur_proj_idx(self, new_pos:int , force:bool = False):
         old_idx = self.cur_proj_idx
         self.cur_proj_idx = new_pos
         # 设定下拉列表的显示
-        if old_idx != self.cur_proj_idx:
+        if force or old_idx != self.cur_proj_idx:
             self.cb_proj.current(self.cur_proj_idx)
             self.refresh_item_combo()
 

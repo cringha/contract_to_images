@@ -14,7 +14,7 @@ from uitls.log import init_with_conf, get_log, LogConfig
 
 
 # 配置文件
-CONFIG_FILE = "config-contract-snaps.json"
+CONFIG_FILE = "config-covert-contract-snapshots.json"
 
 
 class ContractSnapToolUI:
@@ -251,28 +251,9 @@ class ContractSnapToolUI:
             result = convert_contract_snapshots(self.args, cb_info)
             if result:
                 self.update_status("任务执行完成！")
-                self.self.logger.info("任务执行完成")
+                self.logger.info("任务执行完成")
             else:
                 self.update_status("用户取消！")
-
-            # total = 10
-            # for i in range(total):
-            #     if self.stop_flag.is_set():
-            #         self.update_status("任务已停止")
-            #         self.logger.info("任务被中止")
-            #         break
-            #
-            #     msg = f"处理中 {i + 1}/{total}"
-            #
-            #     self.update_status(msg)
-            #     self.logger.info(msg)
-            #     time.sleep(0.5)
-            #
-            #
-            #
-            # else:
-            #     self.update_status("任务完成！")
-            #     self.logger.info("任务执行完成")
 
         except Exception as e:
             self.logger.error(f"异常: {e}", exc_info=True)
