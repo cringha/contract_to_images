@@ -9,6 +9,7 @@ from docxtpl import DocxTemplate, InlineImage
 from jinja2 import Environment
 from uitls.log import get_log
 from uitls.jsonencoder import load_json_file
+from uitls.utils import next_file_name
 
 IMAGE_SIZE = 150
 
@@ -109,18 +110,19 @@ def convert_project_snapshot_images_to_docx(project_snapshots: Dict[str, Any],
     docx.render(project_snapshots, jinja_env)
     # 保存生成的文档
 
-    dest_file = Path(output_docx_file)
-    file_name = dest_file.stem
-    base_path = dest_file.parent
-    counter = 1
-    while dest_file.exists():
-        dest_file = dest_file.parent / f"{file_name}_{counter}{dest_file.suffix}"
-        counter += 1
+    # dest_file = Path(output_docx_file)
+    dest_file = next_file_name( output_docx_file )
+    # file_name = dest_file.stem
+    # base_path = dest_file.parent
+    # counter = 1
+    # while dest_file.exists():
+    #     dest_file = dest_file.parent / f"{file_name}_{counter}{dest_file.suffix}"
+    #     counter += 1
 
 
     logger.info ("save docx : {dest_file}".format(dest_file=dest_file))
     docx.save(dest_file)
-
+    return dest_file
 
 def task_convert_docx(args):
 
@@ -165,6 +167,6 @@ def task_convert_docx(args):
 
     image_base_path = Path(output_images_dir)
 
-    convert_project_snapshot_images_to_docx(project_snapshots, image_base_path, docx_template_file, output_docx_file)
+    return convert_project_snapshot_images_to_docx(project_snapshots, image_base_path, docx_template_file, output_docx_file)
 
-    return True
+

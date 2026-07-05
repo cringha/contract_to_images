@@ -7,7 +7,6 @@ import tkinter as tk
 from tkinter import ttk, filedialog
 from typing import List, Literal, Any, Dict, Set
 
-
 import winsound
 from PIL import Image, ImageTk
 import traceback
@@ -110,9 +109,8 @@ class MainViewer(tk.Tk):
         # 全局数据
         config_dict = self.load_config()
 
-
         self.json_full_path = ""
-        self.image_root = config_dict.get("output-image-root", "") # r"D:\dev\pytools\project1\image_root"
+        self.image_root = config_dict.get("output-image-root", "")  # r"D:\dev\pytools\project1\image_root"
         self.all_projects: ProjectModelManager = ProjectModelManager()
         self.marked_file_set = MarkerManager()
 
@@ -120,6 +118,8 @@ class MainViewer(tk.Tk):
         self.cur_proj_idx = 0
         self.cur_snapshot_idx = 0
         self.cur_img_pos = 0  # 当前截图下标
+
+        self.extra_msg = ""
 
         # 图片缓存防止GC
         self.img_cache: List[Any] = [None, None, None]
@@ -141,9 +141,6 @@ class MainViewer(tk.Tk):
         if default_json_path is not None and default_json_path != "":
             self.load_json_file(default_json_path)
 
-
-
-
     def load_config(self):
         if os.path.exists(CONFIG_FILE):
             try:
@@ -154,8 +151,6 @@ class MainViewer(tk.Tk):
         return {}
 
     def build_ui(self):
-
-
 
         # 顶部下拉栏
         top_frame = ttk.Frame(self)
@@ -238,14 +233,22 @@ class MainViewer(tk.Tk):
         self.status_label = ttk.Label(self, anchor="w", relief=UI_TK_SUNKEN)
         self.status_label.pack(fill=UI_TK_X, padx=1, pady=1)
 
-    def update_status(self, extra_msg=""):
+
+    def _draw_status_message(self):
         root_txt = self.image_root if self.image_root else "未设置截图目录"
-        # 修复：json_path → json_full_path
+
         json_name = os.path.basename(self.json_full_path) if self.json_full_path else "未加载JSON"
-        text = f"截图目录：{root_txt} | JSON文件：{json_name}"
-        if extra_msg:
-            text += f" | {extra_msg}"
+
+        filename = self.get_current_filename()
+
+        text = f"截图目录：{root_txt} | JSON文件：{json_name} | {filename} | {self.extra_msg}"
+
         self.status_label.config(text=text)
+
+    def update_status(self, extra_msg=""):
+        self.extra_msg = extra_msg
+        self._draw_status_message()
+
 
     def set_img_root(self):
         path = filedialog.askdirectory(mustexist=True)
@@ -254,7 +257,7 @@ class MainViewer(tk.Tk):
             self.update_status("已更新截图根目录")
             self.refresh_all_view()
 
-    def load_json_file(self, new_path ):
+    def load_json_file(self, new_path):
         try:
             self.all_projects.load_from_json(new_path)
             self.json_full_path = new_path
@@ -269,7 +272,6 @@ class MainViewer(tk.Tk):
             self.logger.debug(f"load json error {new_path} - {e}", e)
             # traceback.print_stack()
             self.update_status(f"加载失败：{str(e)}")
-
 
     def load_json(self):
         path = filedialog.askopenfilename(filetypes=[("JSON文件", "*.json")], initialfile="local.project.json")
@@ -287,7 +289,7 @@ class MainViewer(tk.Tk):
 
         # TODO: here
         # self.cb_proj.current(self.cur_proj_idx)
-        self.set_cur_proj_idx(0, True )
+        self.set_cur_proj_idx(0, True)
         self.refresh_item_combo()
 
     def get_current_project(self) -> None | ProjectModel:
@@ -297,6 +299,20 @@ class MainViewer(tk.Tk):
             self.logger.debug(
                 f"Why proj is not , cur: {self.cur_proj_idx}, total: {self.all_projects.get_project_count()}")
         return proj
+
+    def get_current_filename(self):
+        proj = self.get_current_project()
+        if proj is None:
+            return ""
+
+        snap = self.get_current_snap_obj()
+        if snap is None:
+            return ""
+        image_url = snap.get_snapshot_url(self.cur_img_pos)
+        if image_url is None:
+            return ""
+
+        return image_url
 
     def refresh_item_combo(self):
         if self.all_projects.is_empty():
@@ -342,7 +358,7 @@ class MainViewer(tk.Tk):
         self.cur_img_pos = 0
         self.refresh_all_view()
 
-    def set_cur_proj_idx(self, new_pos:int , force:bool = False):
+    def set_cur_proj_idx(self, new_pos: int, force: bool = False):
         old_idx = self.cur_proj_idx
         self.cur_proj_idx = new_pos
         # 设定下拉列表的显示
@@ -412,6 +428,20 @@ class MainViewer(tk.Tk):
             self.set_cur_snapshot_idx(idx - 1)
             self.cur_img_pos = snapshot.get_last_pos()
             return True
+
+    def get_current_filename(self):
+        proj = self.get_current_project()
+        if proj is None:
+            return ""
+
+        snap = self.get_current_snap_obj()
+        if snap is None:
+            return ""
+        image_url = snap.get_snapshot_url(self.cur_img_pos)
+        if image_url is None:
+            return ""
+
+        return image_url
 
     # 移到下一个 SNAPSHOT
     def goto_next_snapshot(self):
@@ -649,8 +679,6 @@ class MainViewer(tk.Tk):
     def toggle_mark(self):
         self._toggle_mark_by_pos(self.cur_img_pos)
 
-
-
     def mark_to_snapshots(self):
         self._mark_mark_snapshot_by_start_pos(0)
 
@@ -678,7 +706,6 @@ class MainViewer(tk.Tk):
         except Exception as e:
             self.logger.debug(f"do mark_to_end ：{str(e)}")
             self.update_status(f"mark_to_end：{str(e)}")
-
 
     def mark_current_project(self):
         if self.all_projects.is_empty():
@@ -719,7 +746,7 @@ class MainViewer(tk.Tk):
             snap = self.get_current_snap_obj()
             if snap is None:
                 return
-            image_url = snap.get_snapshot_url( self.cur_img_pos )
+            image_url = snap.get_snapshot_url(self.cur_img_pos)
             if image_url is None:
                 return
 
@@ -733,17 +760,13 @@ class MainViewer(tk.Tk):
             self.logger.debug(f"do rotate_image {angle} ：{str(e)}")
             self.update_status(f"rotate_image_  {angle}  ：{str(e)}")
 
-
     def rotate_image_90(self):
         """旋转图片"""
-        self._rotate_image_angle( 90 )
+        self._rotate_image_angle(90)
 
     def rotate_image_90_1(self):
         """旋转图片"""
-        self._rotate_image_angle( -90 )
-
-
-
+        self._rotate_image_angle(-90)
 
     def _build_img(self, image_url):
         full_path = os.path.join(self.image_root, image_url)
@@ -770,7 +793,7 @@ class MainViewer(tk.Tk):
             print(f"in canvas {name}, w : {w_can}, h: {h_can}")
 
             try:
-                full_path = self._build_img( image_url)
+                full_path = self._build_img(image_url)
                 im = Image.open(full_path)
                 im.thumbnail((w_can - 30, h_can - 40), Image.Resampling.LANCZOS)
                 img_tk = ImageTk.PhotoImage(im)
@@ -802,6 +825,8 @@ class MainViewer(tk.Tk):
         if self.all_projects.is_empty():
             self._clear_canvas()
             return
+
+        self._draw_status_message()
 
         cur_img = self.cur_img_pos
         try:
@@ -840,10 +865,9 @@ class MainViewer(tk.Tk):
         output = self.all_projects.to_json(MyFilter())
 
         try:
-            save_to_json(self.json_full_path, output)
-            self.marked_file_set.clear()
+            filename = save_to_json(self.json_full_path, output)
             self.refresh_all_view()
-            self.update_status("JSON保存完成，已清除标记截图")
+            self.update_status(f"保存 {filename}")
         except Exception as e:
             self.logger.debug(f"save file ：{str(e)}")
             self.update_status(f"保存失败：{str(e)}")

@@ -19,7 +19,7 @@ class ContractSnapApp:
         self.logger = get_log()
         self.root = root
         self.root.title("合同发票截图转DOCX")
-        self.root.geometry("720x420")
+        self.root.geometry("650x320")
         self.root.resizable(False, False)
 
         # 停止标志
@@ -182,10 +182,10 @@ class ContractSnapApp:
             self.logger.info("===== 开始执行任务 =====")
             self.logger.debug(f"参数: {args}")
 
-            task_convert_docx( args )
+            new_file_name = task_convert_docx( args )
 
             if not self.stop_flag.is_set():
-                self.set_status("任务执行完成")
+                self.set_status(f"任务执行完成:{new_file_name}")
                 self.logger.info("===== 任务执行完成 =====")
 
         except Exception as e:

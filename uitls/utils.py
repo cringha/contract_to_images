@@ -459,14 +459,30 @@ def clear_directory(directory):
             print(f'Failed to delete {file_path}. Reason: {e}')
 
 
+
+def next_file_name(output_file: str):
+    dest_file = Path(output_file)
+    file_name = dest_file.stem
+    counter = 1
+    new_file_name = f"{file_name}{dest_file.suffix}"
+    while dest_file.exists():
+        new_file_name = f"{file_name}_{counter}{dest_file.suffix}"
+        dest_file = dest_file.parent /new_file_name
+        counter += 1
+    return str(dest_file)
+
+
 def save_to_json(output_file: str, obj):
     dest_file = Path(output_file)
     file_name = dest_file.stem
     counter = 1
+    new_file_name = f"{file_name}{dest_file.suffix}"
     while dest_file.exists():
-        dest_file = dest_file.parent / f"{file_name}_{counter}{dest_file.suffix}"
+        new_file_name = f"{file_name}_{counter}{dest_file.suffix}"
+        dest_file = dest_file.parent /new_file_name
         counter += 1
 
     output_file1 = str(dest_file)
     with open(output_file1, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, indent=2)
+    return new_file_name
