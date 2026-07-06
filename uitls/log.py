@@ -22,10 +22,10 @@ DEFAULT_LOG_FILE="./logs/tools.log"
 DEFAULT_LOG_LEVEL = "debug"
 class LogConfig:
 
-    def __init__(self):
-        self.logfile = DEFAULT_LOG_FILE
-        self.level = DEFAULT_LOG_LEVEL
-        self.console = True
+    def __init__(self,logfile=DEFAULT_LOG_FILE,loglevel=DEFAULT_LOG_LEVEL, console=True):
+        self.logfile = logfile
+        self.level = loglevel
+        self.console = console
 
     def update_args(self, args):
         if utils.is_not_empty(args.logfile):
