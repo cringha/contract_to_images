@@ -6,6 +6,10 @@ pyinstaller --onefile snap-contract-files.py
 
 pyinstaller --onefile convert-to-docx.py
 
+pyinstaller --onefile download-contracts.py
+
+
+
 pyinstaller --onefile -F -w ui/main_convert_to_snapshots.py
 
 pyinstaller --onefile -F -w ui/main_convert_to_docx.py

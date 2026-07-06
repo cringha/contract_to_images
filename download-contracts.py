@@ -16,7 +16,8 @@ from uitls.log import init_with_conf, get_log, LogConfig
 CACHE_FILE = ".ec4-password.json"
 
 PATH_CONTRACTS = "contracts"
-PATH_INVOICES  = "invoices"
+PATH_INVOICES = "invoices"
+
 
 def get_cache_password_file():
     home_path = Path.home()
@@ -34,7 +35,7 @@ def clear_cache_password_file():
 
 
 # ---------- 工具函数：加载/保存缓存 ----------
-def load_cached_password() -> Optional[Tuple[str, str, str]]:
+def load_cached_password() -> Optional[Tuple[str, str, str, str]]:
     """尝试加载缓存，返回 (modulus_hex, exponent_hex, encrypted_hex)，失败返回 None"""
 
     file = get_cache_password_file()
@@ -44,15 +45,16 @@ def load_cached_password() -> Optional[Tuple[str, str, str]]:
     try:
         with open(file, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        return data.get("modulus"), data.get("exponent"), data.get("encrypted")
+        return data.get("username"), data.get("modulus"), data.get("exponent"), data.get("encrypted")
     except:
         return None
 
 
-def save_cached_password(modulus_hex: str, exponent_hex: str, encrypted_hex: str):
+def save_cached_password(username: str, modulus_hex: str, exponent_hex: str, encrypted_hex: str):
     file = get_cache_password_file()
     with open(file, 'w', encoding='utf-8') as f:
-        json.dump({"modulus": modulus_hex, "exponent": exponent_hex, "encrypted": encrypted_hex}, f, indent=2)
+        json.dump({"username": username, "modulus": modulus_hex, "exponent": exponent_hex, "encrypted": encrypted_hex},
+                  f, indent=2)
 
 
 # ---------- 1. 获取 RSA 公钥 ----------
@@ -248,19 +250,23 @@ def download_zip(base_path: str, session: requests.Session, file_map: Dict[str, 
     return filename
 
 
+file_types = {1: "合同", 2: "发票"}
+
+
 # ---------- 封装：按类型下载 ----------
 def download_by_type(base_path: str, session: requests.Session, initial_nos: List[str], file_type: int,
                      zip_name_prefix: str):
     log = get_log()
-    log.info(f"===== 开始下载 fileType={file_type} ({zip_name_prefix}) =====")
+
+    log.info(f"开始下载 {file_types[file_type]} ({zip_name_prefix})")
     all_nos = get_project_list(session, initial_nos, file_type)
-    log.info(f"  获取到 {len(all_nos)} 个项目编号")
+    log.info(f"获取到 {len(all_nos)} 个项目编号")
     file_map = get_file_id_map(session, all_nos, file_type)
-    log.info(f"  获取到 {len(file_map)} 个项目的文件映射")
+    log.info(f"获取到 {len(file_map)} 个项目的文件映射")
     if file_map:
         return download_zip(base_path, session, file_map, zip_name_prefix)
     else:
-        log.info("  警告：文件映射为空，跳过下载")
+        log.info("警告：文件映射为空，跳过下载")
     return None
 
 
@@ -299,7 +305,7 @@ def read_project_ids(args) -> List[str]:
 import getpass
 
 
-def ask_password(args):
+def ask_password(args , username ):
     if args.password is None or args.password == "":
         password = getpass.getpass("Enter your password: ")
     else:
@@ -312,13 +318,14 @@ def ask_password(args):
 
     modulus, exponent, mod_hex, exp_hex = get_rsa_public_key()
     encrypted_pwd = rsa_encrypt_password(password, modulus, exponent)
-    save_cached_password(mod_hex, exp_hex, encrypted_pwd)
+    save_cached_password(username , mod_hex, exp_hex, encrypted_pwd)
     return encrypted_pwd
 
 
 def unzip_file(zip_path, extract_to):
     with zipfile.ZipFile(zip_path, 'r') as zip_ref:
         zip_ref.extractall(extract_to)
+
 
 # 使用示例
 
@@ -329,22 +336,34 @@ def main(args):
     username = ""  # input("请输入用户名: ").strip()
 
     log = get_log()
-    if args.user is None or args.user == "":
-        username = input("请输入用户名: ").strip()
-    else:
-        username = args.user
-
-    if username is None or username == "":
-        return False
 
     project_ids = read_project_ids(args)
     if project_ids is None or len(project_ids) == 0:
         return False
 
+    cached = load_cached_password()
+
+    if args.user is None or args.user == "":
+        if cached:
+            username, *_ = cached
+
+        if username is None or username == "":
+            username = input("请输入用户名: ").strip()
+
+    else:
+        username = args.user
+
+    if username is None or username == "":
+        log.error("Please input user name")
+        return False
+
+    log.info(f"User: {username}")
+    log.info(f"Project IDs: {project_ids}")
+
     # 尝试从缓存加载加密密码，并校验公钥是否一致
     cached = load_cached_password()
     if cached:
-        mod_hex, exp_hex, enc_pwd = cached
+        _, mod_hex, exp_hex, enc_pwd = cached
         # 获取最新公钥，比较
         try:
             _, _, new_mod_hex, new_exp_hex = get_rsa_public_key()
@@ -357,10 +376,10 @@ def main(args):
         except Exception as _:
             # 公钥变化或网络问题，重新加密
             log.info("重新获取公钥并加密...")
-            encrypted_pwd = ask_password(args)
+            encrypted_pwd = ask_password(args, username)
     else:
         log.info("首次使用，获取公钥并加密...")
-        encrypted_pwd = ask_password(args)
+        encrypted_pwd = ask_password(args, username)
 
     log.info(f"登录中..., {username}")
     session = login(username, encrypted_pwd)
@@ -383,19 +402,18 @@ def main(args):
     log.info(f"合同： {contract_zip}")
     log.info(f"发票： {invoice_zip}")
 
-    if args.extract :
+    if args.extract:
         if contract_zip is not None and contract_zip != "":
             full_contract_zip = base_path_path / contract_zip
             target_contract_path = base_path_path / PATH_CONTRACTS
             log.info(f"解压合同： {contract_zip}, 到目录 {target_contract_path}")
-            unzip_file( full_contract_zip  , target_contract_path )
+            unzip_file(full_contract_zip, target_contract_path)
 
         if invoice_zip is not None and invoice_zip != "":
             full_invoice_zip = base_path_path / invoice_zip
             target_invoice_path = base_path_path / PATH_INVOICES
             log.info(f"解压发票： {invoice_zip}, 到目录 {target_invoice_path}")
-            unzip_file( full_invoice_zip  , target_invoice_path )
-
+            unzip_file(full_invoice_zip, target_invoice_path)
 
     return True
 
