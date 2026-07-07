@@ -1,13 +1,12 @@
-import tkinter as tk
-from tkinter import ttk, filedialog
+import argparse
 import json
 import os
 import threading
-import time
-import logging
-import argparse
+import tkinter as tk
+from tkinter import ttk, filedialog
 
 from enties.task_convert_contract_snapshots import convert_contract_snapshots
+from enties.task_download_contracts import CONFIG_DOWNLOAD_CONTRACT_FILE
 from uitls.log import init_with_conf, get_log, LogConfig
 
 # 日志配置
@@ -30,9 +29,11 @@ class ContractSnapToolUI:
         self.stop_flag = threading.Event()
         self.worker_thread = None
 
+        self.download_contract_config = self.load_config0()
+
         # 加载配置并构建 Namespace
         self.config_dict = self.load_config()
-        self.args = self.build_args_namespace(self.config_dict)
+        self.args = self.build_args_namespace(self.config_dict, self.download_contract_config)
 
         # 界面变量绑定
         self.var_input_xlsx = tk.StringVar(value=self.args.input_xlsx)
@@ -111,17 +112,28 @@ class ContractSnapToolUI:
         status_bar = ttk.Label(root, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W, padding=5)
         status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
-    def build_args_namespace(self, config_dict):
+    def build_args_namespace(self, config_dict, default_config_dict):
         """从配置字典构建 argparse.Namespace，带默认值"""
         ns = argparse.Namespace()
 
-        ns.input_xlsx = config_dict.get("input-xlsx", "")
-        ns.contract_base_root = config_dict.get("contract-base-root", "")
-        ns.invoice_base_root = config_dict.get("invoice-base-root", "")
+        NAME_INPUT_XLSX = "input-xlsx"
+        NAME_CONTRACT_BASE_ROOT = "contract-base-root"
+        NAME_INVOICE_BASE_ROOT = "invoice-base-root"
+        NAME_SHEET_NAME_CONTRACT = "sheet-name-contract"
+        NAME_COL_PROJECT_ID = "col-project-id"
+
+        ns.input_xlsx = config_dict.get(NAME_INPUT_XLSX, default_config_dict.get(NAME_INPUT_XLSX, ""))
+        ns.contract_base_root = config_dict.get(NAME_CONTRACT_BASE_ROOT,
+                                                default_config_dict.get(NAME_CONTRACT_BASE_ROOT, ""))
+        ns.invoice_base_root = config_dict.get(NAME_INVOICE_BASE_ROOT,
+                                               default_config_dict.get(NAME_INVOICE_BASE_ROOT, ""))
         ns.output_image_root = config_dict.get("output-image-root", "./local.images")
 
-        ns.sheet_name_contract = config_dict.get("sheet-name-contract", "Contract")
-        ns.col_project_id = config_dict.get("col-project-id", "项目编号")
+        ns.sheet_name_contract = config_dict.get(NAME_SHEET_NAME_CONTRACT,
+                                                 default_config_dict.get(NAME_SHEET_NAME_CONTRACT,
+                                                                         "Contract"))  # config_dict.get("sheet-name-contract", "Contract")
+        ns.col_project_id = config_dict.get(NAME_COL_PROJECT_ID, default_config_dict.get(NAME_COL_PROJECT_ID,
+                                                                                         "项目编号"))  # config_dict.get("col-project-id", "项目编号")
         ns.col_contract_name = config_dict.get("col-contract-name", "合同名称")
         ns.output_file = config_dict.get("output-file", "./local-contracts.json")
 
@@ -129,6 +141,15 @@ class ContractSnapToolUI:
         ns.max_pages_per_pdf = int(config_dict.get("max-pages-per-pdf", 30))
 
         return ns
+
+    def load_config0(self):
+        if os.path.exists(CONFIG_DOWNLOAD_CONTRACT_FILE):
+            try:
+                with open(CONFIG_DOWNLOAD_CONTRACT_FILE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                self.logger.error(f"加载配置失败: {e}")
+        return {}
 
     def load_config(self):
         if os.path.exists(CONFIG_FILE):

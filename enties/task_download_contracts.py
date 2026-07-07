@@ -1,4 +1,3 @@
-import argparse
 import json
 import os
 import time
@@ -9,14 +8,23 @@ from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 
 import requests
+from tqdm import tqdm
 
 from uitls.excel_utils import read_excel_sheet_values
-from uitls.log import init_with_conf, get_log, LogConfig
+from uitls.log import get_log
 
 CACHE_FILE = ".ec4-password.json"
 
 PATH_CONTRACTS = "contracts"
 PATH_INVOICES = "invoices"
+
+DOWNLOAD_TYPE_ALL = "ALL"
+DOWNLOAD_TYPE_CONTRACT = "CONTRACT"
+DOWNLOAD_TYPE_INVOICE = "INVOICE"
+DOWNLOAD_TYPE = [DOWNLOAD_TYPE_ALL, DOWNLOAD_TYPE_CONTRACT, DOWNLOAD_TYPE_INVOICE]
+
+# 配置文件
+CONFIG_DOWNLOAD_CONTRACT_FILE = ".config-download-contracts.json"
 
 
 def get_cache_password_file():
@@ -220,7 +228,8 @@ def get_file_id_map(session: requests.Session, project_nos: List[str], file_type
 
 
 # ---------- 6. 下载 ZIP ----------
-def download_zip(base_path: str, session: requests.Session, file_map: Dict[str, str], zip_name: str = "下载") -> str:
+def download_zip_old(base_path: str, session: requests.Session, file_map: Dict[str, str],
+                     zip_name: str = "下载") -> str:
     log = get_log()
     tx_id = "S02000A02001" + uuid.uuid4().hex.upper() + uuid.uuid4().hex[:8].upper()
     url = "http://everoffice.cn/service/eo-klm-service/documentUpload/downloadDocumentsMap"
@@ -246,6 +255,62 @@ def download_zip(base_path: str, session: requests.Session, file_map: Dict[str, 
     fullname = os.path.join(base_path, filename)
     with open(fullname, 'wb') as f:
         f.write(resp.content)
+    log.debug(f"下载成功，文件保存为: {filename}")
+    return filename
+
+
+# ---------- 6. 下载 ZIP 带回调百分比 + 绿色进度条 ----------
+def download_zip(base_path: str, session: requests.Session, file_map: Dict[str, str], zip_name: str = "下载",
+                 progress_callback=None) -> str:
+    log = get_log()
+    tx_id = "S02000A02001" + uuid.uuid4().hex.upper() + uuid.uuid4().hex[:8].upper()
+    url = "http://everoffice.cn/service/eo-klm-service/documentUpload/downloadDocumentsMap"
+    params = {"transactionId": tx_id, "zipName": zip_name}
+    headers = {
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "Content-Type": "application/json;charset=UTF-8",
+        "Origin": "http://everoffice.cn",
+        "Pragma": "no-cache",
+        "Referer": "http://everoffice.cn/",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36 Edg/150.0.0.0",
+        "transactionId": tx_id
+    }
+    resp = session.post(url, params=params, headers=headers, json=file_map, stream=True)
+    resp.raise_for_status()
+    if 'application/json' in resp.headers.get('Content-Type', ''):
+        err = resp.json()
+        raise RuntimeError(f"下载失败: {err}")
+
+    filename = f"{zip_name}_{int(time.time())}.zip"
+    fullname = os.path.join(base_path, filename)
+    total_size = int(resp.headers.get("content-length", 0))
+    chunk_size = 1024 * 1024
+    downloaded = 0
+
+    # 绿色进度条
+    with open(fullname, 'wb') as f, tqdm(
+            desc=f"正在下载 {filename}",
+            total=total_size,
+            unit="B",
+            unit_scale=True,
+            unit_divisor=1024,
+            colour="green",
+            leave=True
+    ) as pbar:
+        for chunk in resp.iter_content(chunk_size=chunk_size):
+            if chunk:
+                f.write(chunk)
+                chunk_len = len(chunk)
+                downloaded += chunk_len
+                pbar.update(chunk_len)
+                # 回调输出百分比
+                if progress_callback and total_size > 0:
+                    percent = downloaded / total_size * 100
+                    progress_callback(downloaded, total_size, percent)
+
     log.debug(f"下载成功，文件保存为: {filename}")
     return filename
 
@@ -327,15 +392,56 @@ def unzip_file(zip_path, extract_to):
         zip_ref.extractall(extract_to)
 
 
+def save_config(input_xlsx: str, contract_base_root: str, invoice_base_root: str,
+                sheet_name_contract: str,
+                col_project_id: str):
+    logger = get_log()
+    """从界面读取并保存到配置文件"""
+    cfg = {
+        "input-xlsx": input_xlsx,
+        "contract-base-root": contract_base_root,
+        "invoice-base-root": invoice_base_root,
+        "sheet-name-contract": sheet_name_contract,
+        "col-project-id": col_project_id
+    }
+    try:
+        with open(CONFIG_DOWNLOAD_CONTRACT_FILE, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+        logger.info("配置已保存")
+    except Exception as e:
+        logger.error(f"保存配置失败: {e}")
+
+
 # 使用示例
 
-def main(args):
-    # username = input("请输入用户名: ").strip()
-    # password = input("请输入密码: ").strip()
-
+def download_contracts(args, cb_info):
     username = ""  # input("请输入用户名: ").strip()
 
     log = get_log()
+
+    download_contract = False
+    download_invoice = False
+
+    if args.download_type != "":
+        download_types = args.download_type.upper().split(',')
+        for tt in download_types:
+            if tt != DOWNLOAD_TYPE_ALL and tt not in DOWNLOAD_TYPE:
+                cb_info(False, f"download_type value , wanted , {DOWNLOAD_TYPE} ")
+                return False
+        if DOWNLOAD_TYPE_ALL in download_types:
+            download_contract = True
+            download_invoice = True
+        if DOWNLOAD_TYPE_CONTRACT in download_types:
+            download_contract = True
+        if DOWNLOAD_TYPE_INVOICE in download_types:
+            download_invoice = True
+    else:
+        download_contract = True
+        download_invoice = True
+
+    if download_invoice == False and download_contract == False:
+        cb_info(False, f"至少下载合同或发票一项")
+        return False
 
     project_ids = read_project_ids(args)
     if project_ids is None or len(project_ids) == 0:
@@ -354,7 +460,7 @@ def main(args):
         username = args.user
 
     if username is None or username == "":
-        log.error("Please input user name")
+        cb_info(False, "Please input user name")
         return False
 
     log.info(f"User: {username}")
@@ -386,6 +492,7 @@ def main(args):
     if session is None:
         # 密码输错误了
         clear_cache_password_file()
+        cb_info(True, "无效的密码")
         return True
 
     base_path = args.base_path
@@ -394,59 +501,66 @@ def main(args):
         base_path_path.mkdir(parents=True, exist_ok=True)
 
     # 下载合同
-    contract_zip = download_by_type(base_path, session, project_ids, file_type=1, zip_name_prefix="合同下载")
-    # 下载发票
-    invoice_zip = download_by_type(base_path, session, project_ids, file_type=2, zip_name_prefix="发票下载")
+    if download_contract:
+        contract_zip = download_by_type(base_path, session, project_ids, file_type=1, zip_name_prefix="合同下载")
+        log.info(f"合同： {contract_zip}")
+        if args.extract:
+            if contract_zip is not None and contract_zip != "":
+                full_contract_zip = base_path_path / contract_zip
+                target_contract_path = base_path_path / PATH_CONTRACTS
+                log.info(f"解压合同： {contract_zip}, 到目录 {target_contract_path}")
+                unzip_file(full_contract_zip, target_contract_path)
+                contract_base_root = str(target_contract_path)
 
-    log.info("所有下载完成！")
-    log.info(f"合同： {contract_zip}")
-    log.info(f"发票： {invoice_zip}")
+    invoice_base_root = ""
+    if download_invoice:
+        # 下载发票
+        invoice_zip = download_by_type(base_path, session, project_ids, file_type=2, zip_name_prefix="发票下载")
+        log.info(f"发票： {invoice_zip}")
+        if args.extract:
+            if invoice_zip is not None and invoice_zip != "":
+                full_invoice_zip = base_path_path / invoice_zip
+                target_invoice_path = base_path_path / PATH_INVOICES
+                log.info(f"解压发票： {invoice_zip}, 到目录 {target_invoice_path}")
+                unzip_file(full_invoice_zip, target_invoice_path)
+                invoice_base_root = str(target_invoice_path)
 
-    if args.extract:
-        if contract_zip is not None and contract_zip != "":
-            full_contract_zip = base_path_path / contract_zip
-            target_contract_path = base_path_path / PATH_CONTRACTS
-            log.info(f"解压合同： {contract_zip}, 到目录 {target_contract_path}")
-            unzip_file(full_contract_zip, target_contract_path)
-
-        if invoice_zip is not None and invoice_zip != "":
-            full_invoice_zip = base_path_path / invoice_zip
-            target_invoice_path = base_path_path / PATH_INVOICES
-            log.info(f"解压发票： {invoice_zip}, 到目录 {target_invoice_path}")
-            unzip_file(full_invoice_zip, target_invoice_path)
-
+    save_config(args.input_xlsx, contract_base_root, invoice_base_root, args.sheet_name_contract, args.col_project_id)
+    cb_info(True, "下载执行完毕")
     return True
 
-
-if __name__ == "__main__":
-    init_with_conf(LogConfig("./logs/download.log"))
-    logger = get_log()
-    logger.info("  ")
-
-    parser = argparse.ArgumentParser(description="合同发票下载工具")
-    parser.add_argument("-u", "--user", help="输入EO账号", default="")
-    parser.add_argument("-p", "--password", help="EO密码。 或保持为空，则交互式输入", default="")
-    parser.add_argument("-b", "--base-path", help="存放合同文件根目录, default: %(default)s", default="./local.data")
-    parser.add_argument("-j", "--project-id", help="输入的项目编码，多个项目编码以','分割。 ", default="")
-    parser.add_argument("-i", "--input-xlsx", help="输入Xlsx文件", default="")
-    parser.add_argument("--sheet-name-contract", help="Contract sheet name; default: %(default)s", default="Contract")
-    parser.add_argument("--col-project-id", help="project id column name in `Contract sheet`; default: %(default)s",
-                        default="项目编号")
-
-    parser.add_argument("-x", "--extract", action="store_true", help="解压合同、发票压缩文件，放到 --base-path 目录下")
-    # max_pages_per_pdf
-    try:
-        args = parser.parse_args()
-
-
-        def cb_info(project_id, project_name):
-            logger.info(f"project_id: {project_id}, project_name: {project_name}")
-            return False
-
-
-        result = main(args)
-        if not result:
-            parser.print_help()
-    except Exception as e:
-        logger.error("Exec main error ", e)
-        traceback.print_exc()
+#
+# if __name__ == "__main__":
+#     init_with_conf(LogConfig("./logs/download.log"))
+#     logger = get_log()
+#     logger.info("  ")
+#
+#     parser = argparse.ArgumentParser(description="合同发票下载工具")
+#     parser.add_argument("-u", "--user", help="输入EO账号", default="")
+#     parser.add_argument("-p", "--password", help="EO密码。 或保持为空，则交互式输入", default="")
+#     parser.add_argument("-b", "--base-path", help="存放合同文件根目录, default: %(default)s", default="./local.data")
+#     parser.add_argument("-j", "--project-id", help="输入的项目编码，多个项目编码以','分割。 ", default="")
+#     parser.add_argument("-i", "--input-xlsx", help="输入Xlsx文件", default="")
+#     parser.add_argument("--sheet-name-contract", help="Contract sheet name; default: %(default)s", default="Contract")
+#     parser.add_argument("--col-project-id", help="project id column name in `Contract sheet`; default: %(default)s",
+#                         default="项目编号")
+#
+#     parser.add_argument("-t", "--download_type", help="下载类型， ALL, CONTRACT, INVOICE，default: %(default)s ",
+#                         default="ALL")
+#     parser.add_argument("-x", "--extract", action="store_true", help="解压合同、发票压缩文件，放到 --base-path 目录下")
+#     # max_pages_per_pdf
+#     try:
+#         args = parser.parse_args()
+#
+#
+#         def cb_info(project_id, project_name):
+#             logger.info(f"project_id: {project_id}, project_name: {project_name}")
+#             return False
+#
+#
+#         result = main(args)
+#         if not result:
+#             parser.print_help()
+#     except Exception as e:
+#         logger.error("Exec main error ", e)
+#         traceback.print_exc()
