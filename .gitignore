@@ -4,3 +4,5 @@
 /test.data1
 *.pyc
 *.spec
+/.venv
+/logs
