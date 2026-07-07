@@ -10,8 +10,11 @@ from typing import List, Dict, Optional, Tuple
 import requests
 from tqdm import tqdm
 
+from enties.commons import NAME_INPUT_XLSX, NAME_CONTRACT_BASE_ROOT, NAME_COL_PROJECT_ID, NAME_SHEET_NAME_CONTRACT, \
+    NAME_INVOICE_BASE_ROOT, CONFIG_DOWNLOAD_CONTRACT_FILE
 from uitls.excel_utils import read_excel_sheet_values
 from uitls.log import get_log
+from uitls.utils_config_loader import save_json_config
 
 CACHE_FILE = ".ec4-password.json"
 
@@ -24,7 +27,7 @@ DOWNLOAD_TYPE_INVOICE = "INVOICE"
 DOWNLOAD_TYPE = [DOWNLOAD_TYPE_ALL, DOWNLOAD_TYPE_CONTRACT, DOWNLOAD_TYPE_INVOICE]
 
 # 配置文件
-CONFIG_DOWNLOAD_CONTRACT_FILE = ".config-download-contracts.json"
+# CONFIG_DOWNLOAD_CONTRACT_FILE = ".config-download-contracts.json"
 
 
 def get_cache_password_file():
@@ -395,21 +398,22 @@ def unzip_file(zip_path, extract_to):
 def save_config(input_xlsx: str, contract_base_root: str, invoice_base_root: str,
                 sheet_name_contract: str,
                 col_project_id: str):
-    logger = get_log()
+    # logger = get_log()
     """从界面读取并保存到配置文件"""
     cfg = {
-        "input-xlsx": input_xlsx,
-        "contract-base-root": contract_base_root,
-        "invoice-base-root": invoice_base_root,
-        "sheet-name-contract": sheet_name_contract,
-        "col-project-id": col_project_id
+        NAME_INPUT_XLSX : input_xlsx,
+        NAME_CONTRACT_BASE_ROOT: contract_base_root,
+        NAME_INVOICE_BASE_ROOT: invoice_base_root,
+        NAME_SHEET_NAME_CONTRACT: sheet_name_contract,
+        NAME_COL_PROJECT_ID: col_project_id
     }
-    try:
-        with open(CONFIG_DOWNLOAD_CONTRACT_FILE, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, ensure_ascii=False, indent=2)
-        logger.info("配置已保存")
-    except Exception as e:
-        logger.error(f"保存配置失败: {e}")
+    save_json_config( CONFIG_DOWNLOAD_CONTRACT_FILE , cfg )
+    # try:
+    #     with open(CONFIG_DOWNLOAD_CONTRACT_FILE, "w", encoding="utf-8") as f:
+    #         json.dump(cfg, f, ensure_ascii=False, indent=2)
+    #     logger.info("配置已保存")
+    # except Exception as e:
+    #     logger.error(f"保存配置失败: {e}")
 
 
 # 使用示例

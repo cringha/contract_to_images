@@ -5,9 +5,12 @@ import threading
 import tkinter as tk
 from tkinter import ttk, filedialog
 
+from enties.commons import NAME_INPUT_XLSX, NAME_CONTRACT_BASE_ROOT, NAME_INVOICE_BASE_ROOT, NAME_SHEET_NAME_CONTRACT, \
+    NAME_COL_PROJECT_ID, NAME_OUTPUT_IMAGE_ROOT, NAME_MAX_PAGES_PER_PDF, NAME_COL_CONTRACT_NAME, NAME_OUTPUT_FILE
 from enties.task_convert_contract_snapshots import convert_contract_snapshots
 from enties.task_download_contracts import CONFIG_DOWNLOAD_CONTRACT_FILE
 from uitls.log import init_with_conf, get_log, LogConfig
+from uitls.utils_config_loader import save_json_config, CascadeConfig
 
 # 日志配置
 
@@ -29,11 +32,11 @@ class ContractSnapToolUI:
         self.stop_flag = threading.Event()
         self.worker_thread = None
 
-        self.download_contract_config = self.load_config0()
+        # self.download_contract_config = self.load_config0()
 
         # 加载配置并构建 Namespace
         self.config_dict = self.load_config()
-        self.args = self.build_args_namespace(self.config_dict, self.download_contract_config)
+        self.args = self.build_args_namespace(self.config_dict)
 
         # 界面变量绑定
         self.var_input_xlsx = tk.StringVar(value=self.args.input_xlsx)
@@ -112,28 +115,19 @@ class ContractSnapToolUI:
         status_bar = ttk.Label(root, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W, padding=5)
         status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
-    def build_args_namespace(self, config_dict, default_config_dict):
+    def build_args_namespace(self, config_dict):
         """从配置字典构建 argparse.Namespace，带默认值"""
         ns = argparse.Namespace()
 
-        NAME_INPUT_XLSX = "input-xlsx"
-        NAME_CONTRACT_BASE_ROOT = "contract-base-root"
-        NAME_INVOICE_BASE_ROOT = "invoice-base-root"
-        NAME_SHEET_NAME_CONTRACT = "sheet-name-contract"
-        NAME_COL_PROJECT_ID = "col-project-id"
-
-        ns.input_xlsx = config_dict.get(NAME_INPUT_XLSX, default_config_dict.get(NAME_INPUT_XLSX, ""))
-        ns.contract_base_root = config_dict.get(NAME_CONTRACT_BASE_ROOT,
-                                                default_config_dict.get(NAME_CONTRACT_BASE_ROOT, ""))
-        ns.invoice_base_root = config_dict.get(NAME_INVOICE_BASE_ROOT,
-                                               default_config_dict.get(NAME_INVOICE_BASE_ROOT, ""))
+        ns.input_xlsx = config_dict.get(NAME_INPUT_XLSX, "")
+        ns.contract_base_root = config_dict.get(NAME_CONTRACT_BASE_ROOT, "")
+        ns.invoice_base_root = config_dict.get(NAME_INVOICE_BASE_ROOT, "")
         ns.output_image_root = config_dict.get("output-image-root", "./local.images")
 
         ns.sheet_name_contract = config_dict.get(NAME_SHEET_NAME_CONTRACT,
-                                                 default_config_dict.get(NAME_SHEET_NAME_CONTRACT,
-                                                                         "Contract"))  # config_dict.get("sheet-name-contract", "Contract")
-        ns.col_project_id = config_dict.get(NAME_COL_PROJECT_ID, default_config_dict.get(NAME_COL_PROJECT_ID,
-                                                                                         "项目编号"))  # config_dict.get("col-project-id", "项目编号")
+                                                 "Contract")  # config_dict.get("sheet-name-contract", "Contract")
+        ns.col_project_id = config_dict.get(NAME_COL_PROJECT_ID,
+                                            "项目编号")  # config_dict.get("col-project-id", "项目编号")
         ns.col_contract_name = config_dict.get("col-contract-name", "合同名称")
         ns.output_file = config_dict.get("output-file", "./local-contracts.json")
 
@@ -142,44 +136,48 @@ class ContractSnapToolUI:
 
         return ns
 
-    def load_config0(self):
-        if os.path.exists(CONFIG_DOWNLOAD_CONTRACT_FILE):
-            try:
-                with open(CONFIG_DOWNLOAD_CONTRACT_FILE, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception as e:
-                self.logger.error(f"加载配置失败: {e}")
-        return {}
+    # def load_config0(self):
+    #     if os.path.exists(CONFIG_DOWNLOAD_CONTRACT_FILE):
+    #         try:
+    #             with open(CONFIG_DOWNLOAD_CONTRACT_FILE, "r", encoding="utf-8") as f:
+    #                 return json.load(f)
+    #         except Exception as e:
+    #             self.logger.error(f"加载配置失败: {e}")
+    #     return {}
 
     def load_config(self):
-        if os.path.exists(CONFIG_FILE):
-            try:
-                with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception as e:
-                self.logger.error(f"加载配置失败: {e}")
-        return {}
+
+        return CascadeConfig(CONFIG_FILE, dict(), CascadeConfig(CONFIG_DOWNLOAD_CONTRACT_FILE))
+
+        # if os.path.exists(CONFIG_FILE):
+        #     try:
+        #         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+        #             return json.load(f)
+        #     except Exception as e:
+        #         self.logger.error(f"加载配置失败: {e}")
+        # return {}
 
     def save_config(self):
         """从界面读取并保存到配置文件"""
         cfg = {
-            "input-xlsx": self.var_input_xlsx.get().strip(),
-            "contract-base-root": self.var_contract_base_root.get().strip(),
-            "invoice-base-root": self.var_invoice_base_root.get().strip(),
-            "output-image-root": self.var_output_image_root.get().strip(),
-            "max-pages-per-pdf": self.var_max_pages_per_pdf.get().strip(),
-            "sheet-name-contract": self.var_sheet_name_contract.get().strip(),
-            "col-project-id": self.var_col_project_id.get().strip(),
-            "col-contract-name": self.var_col_contract_name.get().strip(),
+            NAME_INPUT_XLSX: self.var_input_xlsx.get().strip(),
+            NAME_CONTRACT_BASE_ROOT: self.var_contract_base_root.get().strip(),
+            NAME_INVOICE_BASE_ROOT: self.var_invoice_base_root.get().strip(),
+            NAME_OUTPUT_IMAGE_ROOT: self.var_output_image_root.get().strip(),
+            NAME_MAX_PAGES_PER_PDF: self.var_max_pages_per_pdf.get().strip(),
+            NAME_SHEET_NAME_CONTRACT: self.var_sheet_name_contract.get().strip(),
+            NAME_COL_PROJECT_ID: self.var_col_project_id.get().strip(),
+            NAME_COL_CONTRACT_NAME: self.var_col_contract_name.get().strip(),
 
-            "output-file": self.var_output_file.get().strip()
+            NAME_OUTPUT_FILE: self.var_output_file.get().strip()
         }
-        try:
-            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                json.dump(cfg, f, ensure_ascii=False, indent=2)
-            self.logger.info("配置已保存")
-        except Exception as e:
-            self.logger.error(f"保存配置失败: {e}")
+        save_json_config(CONFIG_FILE, cfg)
+        # try:
+        #     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        #         json.dump(cfg, f, ensure_ascii=False, indent=2)
+        #     self.logger.info("配置已保存")
+        # except Exception as e:
+        #     self.logger.error(f"保存配置失败: {e}")
 
     def refresh_args_from_ui(self):
         """每次运行前从界面刷新 Namespace 参数"""
