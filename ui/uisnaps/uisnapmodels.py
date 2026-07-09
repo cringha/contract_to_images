@@ -89,7 +89,7 @@ class ProjectItemModel:
         else:
             return output
 
-    def to_json(self, wrapper_list: bool , filter1: OutputFilter | None = None) -> List[Dict[str, Any]] | None:
+    def to_json(self, wrapper_list: bool, filter1: OutputFilter | None = None) -> List[Dict[str, Any]] | None:
 
         items = []
         if self.snapshots is None:
@@ -158,6 +158,17 @@ class ProjectModel:
 
         return self.all_snapshots[index]
 
+    def get_snapshot_files(self, wanted=None):
+        item_list = []
+        if wanted is None:
+            wanted = [ProjectItemType.Order, ProjectItemType.Invoice]
+        for one in self.all_snapshots:
+            if one.item_type in wanted:
+                for f in one.snapshots:
+                    item_list.append(f)
+
+        return item_list
+
     def get_snapshot_count(self):
         return len(self.all_snapshots)
 
@@ -184,7 +195,7 @@ class ProjectModel:
         output["meta"] = self.meta
         has_value = False
         if self.contract:
-            contract = self.contract.to_json(False,filter1)
+            contract = self.contract.to_json(False, filter1)
             if contract is not None:
                 output["contracts"] = contract
                 has_value = True
@@ -293,6 +304,14 @@ class ProjectModelManager:
         with open(path, "r", encoding="utf-8") as f:
             raw = json.load(f)
             self.load_from_dict(raw)
+
+    def all_snapshot_files (self) -> List[str]:
+        out = []
+        for p in self.projects:
+            pfs = p.get_snapshot_files()
+            if pfs :
+                out.extend(pfs)
+        return out
 
     def load_from_dict(self, raw: Dict[str, Any]):
 

@@ -1,15 +1,11 @@
+import json
 import random
 import re
-import shutil
 import string
+import tarfile
 import tempfile
 import time
-import os
-import tarfile
-
-import json
 from datetime import datetime
-import os
 from pathlib import Path
 
 
@@ -99,19 +95,20 @@ def file_size(file_path):
         return convert_bytes(file_info.st_size)
 
 
-def get_dict_val(obj, name):
+def get_dict_val(obj, name, default_val=None):
     try:
         if name in obj:
             return obj[name]
-        return None
+        return default_val
     except Exception as e:
         raise e
+
 
 def get_extension(filename):
     return Path(filename).suffix
 
 
-def get_extension(file_path):
+def get_extension2(file_path):
     # return Path(filename).
     return os.path.splitext(file_path)
 
@@ -157,6 +154,7 @@ def remove_file(filename, mute=True, throws=False):
             if not mute:
                 print("remove file err ", filename, str(e));
 
+
 def is_empty(v):
     if v is None or v == "":
         return True
@@ -167,7 +165,6 @@ def is_not_empty(v):
     if v is not None and v != "":
         return True
     return False
-
 
 
 def beans_to_arrays(beans, names):
@@ -459,7 +456,6 @@ def clear_directory(directory):
             print(f'Failed to delete {file_path}. Reason: {e}')
 
 
-
 def next_file_name(output_file: str):
     dest_file = Path(output_file)
     file_name = dest_file.stem
@@ -467,7 +463,7 @@ def next_file_name(output_file: str):
     new_file_name = f"{file_name}{dest_file.suffix}"
     while dest_file.exists():
         new_file_name = f"{file_name}_{counter}{dest_file.suffix}"
-        dest_file = dest_file.parent /new_file_name
+        dest_file = dest_file.parent / new_file_name
         counter += 1
     return str(dest_file)
 
@@ -479,7 +475,7 @@ def save_to_json(output_file: str, obj):
     new_file_name = f"{file_name}{dest_file.suffix}"
     while dest_file.exists():
         new_file_name = f"{file_name}_{counter}{dest_file.suffix}"
-        dest_file = dest_file.parent /new_file_name
+        dest_file = dest_file.parent / new_file_name
         counter += 1
 
     output_file1 = str(dest_file)

@@ -1,21 +1,21 @@
 import base64
-import copy
 import json
 import os
 import random
 import tkinter as tk
+import traceback
+from pathlib import Path
 from tkinter import ttk, filedialog
 from typing import List, Literal, Any, Dict, Set
 
 import winsound
 from PIL import Image, ImageTk
-import traceback
 
-from ui.pngres import STAMP_PNG
-from ui.stamp_pn import image_base64
+from ui.stamp_accept_pn import image_base64_accepted
 from ui.uisnaps.uisnapmodels import ProjectModelManager, ProjectModel, SnapshotModel, OutputFilter
 from uitls.log import init_with_conf, LogConfig, get_log
-from uitls.utils import save_to_json
+from uitls.utils import save_to_json, load_json_file_as_dict, get_dict_val
+from uitls.utils_config_loader import save_json_config
 
 UI_TK_LEFT: Literal["left"] = "left"
 UI_TK_X: Literal["x"] = "x"
@@ -40,15 +40,21 @@ class MarkerManager:
         self.markers: Dict[str, MarkerPos] = {}
         self.x = 200
         self.y = 200
+        self.cache_file_name = ".selected_markers.json"
 
     def clear(self):
         self.markers.clear()
 
+    def size(self):
+        return len(self.markers)
+
     def add_marker(self, key: str, x: int, y: int):
         self.markers[key] = MarkerPos(x, y)
+        self.save()
 
     def remove(self, key: str):
         del self.markers[key]
+        self.save()
 
     def has_marker(self, key: str):
         return key in self.markers
@@ -59,6 +65,39 @@ class MarkerManager:
             return one.x, one.y
         else:
             return 100, 100
+
+    def _set_all(self, selected_marker):
+        out = {}
+        for one in selected_marker:
+            name = get_dict_val(one, "name")
+            if name is None or name == "":
+                continue
+            x = get_dict_val(one, "x", self.x)
+            y = get_dict_val(one, "y", self.y)
+            out[name] = MarkerPos(x, y)
+        old = self.markers
+        self.markers = out
+        return old
+
+    def save(self):
+        out = []
+        for k, v in self.markers.items():
+            one = {"name": k, "x": v.x, "y": v.y}
+            out.append(one)
+
+        data = {"selected_markers": out}
+        save_json_config(self.cache_file_name, data)
+
+    def load(self, json_data_file: str):
+        json_data_file_path = Path(json_data_file)
+        selected_file = json_data_file_path.parent / f"{json_data_file_path.stem}.selected.json"
+        self.cache_file_name = selected_file
+        if selected_file.exists():
+            data = load_json_file_as_dict(selected_file)
+            if data:
+                selected_marker = get_dict_val(data, "selected_markers", [])
+                if selected_marker:
+                    self._set_all(selected_marker)
 
     def mark_all(self, keys: Set[str]):
         out: Dict[str, MarkerPos] = dict()
@@ -82,6 +121,7 @@ class MarkerManager:
             for key in keys:
                 del self.markers[key]
 
+        self.save()
         return out
 
 
@@ -139,7 +179,7 @@ class MainViewer(tk.Tk):
 
         default_json_path = config_dict.get("output-file", "")
         if default_json_path is not None and default_json_path != "":
-            self.load_json_file(default_json_path)
+            self.load_json_data_file(default_json_path)
 
     def load_config(self):
         if os.path.exists(CONFIG_FILE):
@@ -223,7 +263,7 @@ class MainViewer(tk.Tk):
         self.canvas_right.pack(expand=True, fill=UI_TK_BOTH)
         self.canvas_right.bind("<Button-1>", lambda e: self.do_toggle_mark_right_img(e))
 
-        img = base64.b64decode(image_base64)
+        img = base64.b64decode(image_base64_accepted)
         self.stamp_photo: ImageTk.PhotoImage = ImageTk.PhotoImage(data=img)
         # self.stamp_photo: ImageTk.PhotoImage = ImageTk.PhotoImage(image)
         self.stamp_photo_w = self.stamp_photo.width()
@@ -232,7 +272,6 @@ class MainViewer(tk.Tk):
         # 底部状态栏
         self.status_label = ttk.Label(self, anchor="w", relief=UI_TK_SUNKEN)
         self.status_label.pack(fill=UI_TK_X, padx=1, pady=1)
-
 
     def _draw_status_message(self):
         root_txt = self.image_root if self.image_root else "未设置截图目录"
@@ -249,7 +288,6 @@ class MainViewer(tk.Tk):
         self.extra_msg = extra_msg
         self._draw_status_message()
 
-
     def set_img_root(self):
         path = filedialog.askdirectory(mustexist=True)
         if path:
@@ -257,13 +295,27 @@ class MainViewer(tk.Tk):
             self.update_status("已更新截图根目录")
             self.refresh_all_view()
 
-    def load_json_file(self, new_path):
+    def load_selected_snapshots(self, json_data_file: str):
+        json_data_file_path = Path(json_data_file)
+        selected_file = json_data_file_path.parent / f"{json_data_file_path.stem}.selected.json"
+        if selected_file.exists():
+            data = load_json_file_as_dict(selected_file)
+
+    def _init_invoice_and_orders(self):
+        if self.marked_file_set.size() > 0:
+            return
+
+        files = self.all_projects.all_snapshot_files()
+        self.marked_file_set.mark_all(set(files))
+
+    def load_json_data_file(self, new_path):
         try:
             self.all_projects.load_from_json(new_path)
             self.json_full_path = new_path
-            self.marked_file_set.clear()
+            self.marked_file_set.load(new_path)
             self.cur_proj_idx = 0
             self.cur_img_pos = 0
+            self._init_invoice_and_orders()
             self.refresh_proj_combo()
             self.refresh_all_view()
             self.update_status("JSON加载完成")
@@ -278,7 +330,7 @@ class MainViewer(tk.Tk):
         if not path:
             return
 
-        self.load_json_file(path)
+        self.load_json_data_file(path)
 
     def refresh_proj_combo(self):
         if self.all_projects.is_empty():
@@ -858,7 +910,7 @@ class MainViewer(tk.Tk):
 
         class MyFilter(OutputFilter):
             def accept(self1, name: str) -> bool:
-                if not self.marked_file_set.has_marker(name):
+                if self.marked_file_set.has_marker(name):
                     return True
                 return False
 
