@@ -1,3 +1,4 @@
+import argparse
 import base64
 import json
 import os
@@ -11,6 +12,7 @@ from typing import List, Literal, Any, Dict, Set
 import winsound
 from PIL import Image, ImageTk
 
+from enties.task_convert_to_docx import task_convert_docx
 from ui.stamp_accept_pn import image_base64_accepted
 from ui.uisnaps.uisnapmodels import ProjectModelManager, ProjectModel, SnapshotModel, OutputFilter
 from uitls.log import init_with_conf, LogConfig, get_log
@@ -154,6 +156,9 @@ class MainViewer(tk.Tk):
         self.all_projects: ProjectModelManager = ProjectModelManager()
         self.marked_file_set = MarkerManager()
 
+        self.template_file_name = ""
+        self.docx_output_file_name = ""
+
         # 当前浏览指针
         self.cur_proj_idx = 0
         self.cur_snapshot_idx = 0
@@ -231,6 +236,7 @@ class MainViewer(tk.Tk):
         ttk.Button(btn_frame, text="下一个文件", command=self.do_next_snap).pack(side=UI_TK_LEFT, padx=4)
 
         ttk.Button(btn_frame, text="保存数据文件", command=self.save_clean_json).pack(side=UI_TK_RIGHT, padx=4)
+        ttk.Button(btn_frame, text="保存且生成DOCX", command=self.save_and_gen_docx).pack(side=UI_TK_RIGHT, padx=4)
 
         # 三图容器
         self.canvas_frame = img_box = ttk.Frame(self)
@@ -906,7 +912,7 @@ class MainViewer(tk.Tk):
     def save_clean_json(self):
         if not self.json_full_path or not self.all_projects:
             self.update_status("未加载数据，无法保存")
-            return
+            return ""
 
         class MyFilter(OutputFilter):
             def accept(self1, name: str) -> bool:
@@ -920,10 +926,41 @@ class MainViewer(tk.Tk):
             filename = save_to_json(self.json_full_path, output)
             self.refresh_all_view()
             self.update_status(f"保存 {filename}")
+            return   filename
         except Exception as e:
             self.logger.debug(f"save file ：{str(e)}")
             self.update_status(f"保存失败：{str(e)}")
+            return ""
 
+    def select_template_file_docx(self):
+        path = filedialog.askopenfilename(filetypes=[("DOCX Files", "*.docx"), ("All Files", "*.*")])
+        if path:
+            self.template_file_name = path
+
+    def select_docx_output_file_name(self):
+        path = filedialog.asksaveasfilename(defaultextension=".docx", filetypes=[("DOCX", "*.docx")])
+        if path:
+            self.docx_output_file_name = path
+
+    def save_and_gen_docx(self):
+
+        new_json_file = self.save_clean_json()
+        if new_json_file == "":
+            return
+
+        if self.template_file_name == "":
+            self.select_template_file_docx()
+
+        if self.docx_output_file_name == "":
+            self.select_docx_output_file_name()
+
+        args = argparse.Namespace(
+            input_json=new_json_file,
+            input_image_root=self.image_root,
+            docx_template_file=self.template_file_name,
+            output_docx_file=self.docx_output_file_name
+        )
+        new_file_name = task_convert_docx(args)
 
 if __name__ == "__main__":
     init_with_conf(LogConfig())

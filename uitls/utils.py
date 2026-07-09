@@ -481,4 +481,4 @@ def save_to_json(output_file: str, obj):
     output_file1 = str(dest_file)
     with open(output_file1, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, indent=2)
-    return new_file_name
+    return dest_file
