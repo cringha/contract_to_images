@@ -933,12 +933,12 @@ class MainViewer(tk.Tk):
             return ""
 
     def select_template_file_docx(self):
-        path = filedialog.askopenfilename(filetypes=[("DOCX Files", "*.docx"), ("All Files", "*.*")])
+        path = filedialog.askopenfilename(title="Open Template file", filetypes=[("DOCX Files", "*.docx"), ("All Files", "*.*")])
         if path:
             self.template_file_name = path
 
     def select_docx_output_file_name(self):
-        path = filedialog.asksaveasfilename(defaultextension=".docx", filetypes=[("DOCX", "*.docx")])
+        path = filedialog.asksaveasfilename(title="Save docx file", defaultextension=".docx", filetypes=[("DOCX", "*.docx")])
         if path:
             self.docx_output_file_name = path
 
@@ -961,6 +961,8 @@ class MainViewer(tk.Tk):
             output_docx_file=self.docx_output_file_name
         )
         new_file_name = task_convert_docx(args)
+        if new_file_name:
+            os.startfile( new_file_name )
 
 if __name__ == "__main__":
     init_with_conf(LogConfig())
