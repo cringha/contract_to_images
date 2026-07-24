@@ -9,6 +9,12 @@ from tkinter import ttk, filedialog, messagebox
 from tkinter.scrolledtext import ScrolledText
 import ctypes
 
+import requests
+
+from uitls.log import init_with_conf, LogConfig, get_log
+from enties.task_download_contracts import load_cached_password, user_login, \
+    PasswordLoader, clear_cache_password_file
+
 # ======================== 日志配置 ========================
 logger = logging.getLogger("ContractInvoiceDownloader")
 logger.setLevel(logging.INFO)
@@ -42,9 +48,10 @@ def load_cache() -> tuple[str, str]:
         logger.exception("加载缓存失败")
         return "", ""
 
-def load_cached_password():
-    user, enc_pwd = load_cache()
-    return user, "", "", enc_pwd
+# def load_cached_password():
+#
+#     user, enc_pwd = load_cache()
+#     return user, "", "", enc_pwd
 
 # ======================== 主窗口类 ========================
 class DownloadDialog(Tk):
@@ -76,12 +83,12 @@ class DownloadDialog(Tk):
         self.var_invoice = BooleanVar()
         self.var_extract = BooleanVar()
         self.var_status = StringVar()
-
+        self.session : None | requests.Session = None
         # 登录状态标记
         self.is_login = False
 
         # 加载本地缓存账号密码
-        cache_user, _, _, cache_enc = load_cached_password()
+        cache_user, _, _, cache_enc = load_cached_password() or ("","","","")
         self.cache_user = cache_user
         self.cache_enc_pwd = cache_enc
         self.has_cache = bool(cache_enc)
@@ -198,25 +205,25 @@ class DownloadDialog(Tk):
     def clear_login(self):
         """清除登录状态，删除缓存文件"""
         # 1. 删除缓存文件
-        if CACHE_PATH.exists():
-            try:
-                os.remove(CACHE_PATH)
-                logger.info("已删除本地登录缓存文件")
-            except Exception as e:
-                logger.exception("删除缓存文件失败")
-                messagebox.showerror("错误", "缓存文件删除失败")
-                return
+        # if CACHE_PATH.exists():
+        try:
+            # clear_cache_password_file()
+            logger.info("已删除本地登录缓存文件")
+        except Exception as e:
+            logger.exception("删除缓存文件失败")
+            messagebox.showerror("错误", "缓存文件删除失败")
+            return
 
         # 2. 重置登录状态
         self.is_login = False
-        self.has_cache = False
-        self.cache_user = ""
-        self.cache_enc_pwd = ""
-
-        # 3. 清空账号密码输入框
-        self.var_user.set("")
-        self.var_pwd.set("")
-
+        # self.has_cache = False
+        # self.cache_user = ""
+        # self.cache_enc_pwd = ""
+        #
+        # # 3. 清空账号密码输入框
+        # self.var_user.set("")
+        # self.var_pwd.set("")
+        self.session = None
         # 4. 账号、密码输入框恢复可编辑，登录按钮启用
         self.entry_user.config(state=NORMAL)
         self.entry_pwd.config(state=NORMAL)
@@ -241,13 +248,21 @@ class DownloadDialog(Tk):
             return
 
         # ==================== 此处替换真实登录接口逻辑 ====================
-        login_success = True
+
+        def cb_callback_info(status:bool , msg:str):
+            self.update_status(msg, "info" if status else "error")
+
+        self.session = session = user_login(user, PasswordLoader(pwd), cb_callback_info)
+        if session is not None:
+            login_success = True
+        else:
+            login_success = False
         # =================================================================
 
         if login_success:
             self.is_login = True
             self.update_status("登录成功！可进行下载操作", "info")
-            messagebox.showinfo("提示", "登录验证通过")
+            # messagebox.showinfo("提示", "登录验证通过")
 
             # 登录成功：账号、密码、登录按钮全部禁用
             self.entry_user.config(state=DISABLED)
@@ -260,9 +275,11 @@ class DownloadDialog(Tk):
             # 无缓存时保存账号密码到本地
             if not self.has_cache:
                 save_cache(user, pwd)
+                pass
         else:
-            self.update_status("登录失败，请检查账号密码", "error")
-            messagebox.showerror("登录失败", "账号或密码错误，请重新输入")
+            # self.update_status("登录失败，请检查账号密码", "error")
+            # messagebox.showerror("登录失败", "账号或密码错误，请重新输入")
+            pass
 
     def select_xlsx(self):
         """选择Excel文件"""
@@ -341,6 +358,11 @@ class DownloadDialog(Tk):
 
 # 程序入口
 if __name__ == "__main__":
+
+    init_with_conf(LogConfig())
+    logger = get_log()
+    logger.debug(f"Tools init ")
+
     try:
         app = DownloadDialog()
         app.mainloop()

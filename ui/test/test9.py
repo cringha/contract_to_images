@@ -26,7 +26,7 @@ class Handle:
             self.canvas.itemconfig(self.item_id, fill=color)
         else:
             self.item_id = self.canvas.create_rectangle(
-                x1, y1, x2, y2, fill=color, outline="white", tags="shape"
+                x1, y1, x2, y2, fill=color, outline="white"
             )
 
     def delete(self):
@@ -68,7 +68,7 @@ class Rect:
             self.canvas.coords(self.item_id, x1, y1, x2, y2)
         else:
             self.item_id = self.canvas.create_rectangle(
-                x1, y1, x2, y2, outline="red", width=2, tags="shape"
+                x1, y1, x2, y2, outline="red", width=2
             )
         self.update_handles(img2canvas_func)
         for h in self.handles:
@@ -133,12 +133,19 @@ class CanvasController:
         self.clear_selection()
         self.is_drawing = True
         self.draw_start = (x, y)
-        self.temp_rect = self.canvas.create_rectangle(x, y, x, y, outline="red", width=2, tags="temp")
+        self.temp_rect = self.canvas.create_rectangle(x, y, x, y, outline="red", width=2)
 
     def on_drag_draw(self, x: float, y: float):
         if self.is_drawing and self.temp_rect:
             sx, sy = self.draw_start
             self.canvas.coords(self.temp_rect, sx, sy, x, y)
+
+    def cancel_drawing(self):
+        """取消当前绘制，删除临时框"""
+        if self.is_drawing and self.temp_rect:
+            self.canvas.delete(self.temp_rect)
+            self.temp_rect = None
+        self.is_drawing = False
 
     def finish_drawing(self, x: float, y: float, canvas2img_func, img2canvas_func):
         if not self.is_drawing:
@@ -161,7 +168,7 @@ class CanvasController:
         self.is_selecting = True
         self.select_start = (x, y)
         self.select_rect = self.canvas.create_rectangle(
-            x, y, x, y, outline="gray", dash=(4, 2), tags="temp"
+            x, y, x, y, outline="gray", dash=(4, 2)
         )
 
     def on_drag_select_box(self, x: float, y: float):
@@ -276,8 +283,6 @@ class CanvasController:
         self.redraw_all(img2canvas_func)
 
     def redraw_all(self, img2canvas_func):
-        # 只清空标注形状，不删除背景图
-        self.canvas.delete("shape")
         for r in self.rects:
             r.selected = r in self.selected_rects
             r.draw(self.scale, img2canvas_func)
@@ -311,13 +316,14 @@ class CanvasController:
 class MainApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("标注工具-修复缩放矩形消失")
+        self.title("标注工具-Ctrl临时绘图")
         self.geometry("1000x700")
         # 工具栏
         self.frame = tk.Frame(self)
         self.frame.pack(fill=tk.X, padx=5, pady=5)
         self.draw_mode = tk.BooleanVar(value=False)
-        tk.Checkbutton(self.frame, text="绘制矩形模式", variable=self.draw_mode).pack(side=tk.LEFT)
+        tk.Checkbutton(self.frame, text="固定绘制矩形模式", variable=self.draw_mode).pack(side=tk.LEFT)
+        tk.Label(self.frame, text="| 按住Ctrl临时绘图，松开取消绘制").pack(side=tk.LEFT, padx=10)
         tk.Button(self.frame, text="导出JSON", command=self.export_json).pack(side=tk.LEFT, padx=5)
         tk.Button(self.frame, text="导入JSON", command=self.import_json).pack(side=tk.LEFT, padx=5)
         # 画布
@@ -331,11 +337,14 @@ class MainApp(tk.Tk):
         self.bg_img_id = None
         self.img_origin_w = 0
         self.img_origin_h = 0
-        self.bg_offset_x = 0
-        self.bg_offset_y = 0
-        # 延迟加载图片，防止初始化尺寸0报错
+        self.bg_offset_x = 0.0
+        self.bg_offset_y = 0.0
+        self.base_fit_scale = 1.0
+        # Ctrl标记
+        self.ctrl_pressed = False
+        # 延迟加载图片
         self.after(100, self.load_background)
-        # 绑定事件
+        # 绑定鼠标事件
         self.canvas.bind("<ButtonPress-1>", self.on_press)
         self.canvas.bind("<B1-Motion>", self.on_drag)
         self.canvas.bind("<ButtonRelease-1>", self.on_release)
@@ -343,6 +352,19 @@ class MainApp(tk.Tk):
         self.canvas.bind("<Button-3>", self.right_click_exit_draw)
         self.bind("<Delete>", lambda e: self.delete_selected())
         self.canvas.bind("<Configure>", self.resize_bg)
+        # 绑定Ctrl按键
+        self.bind("<KeyPress-Control_L>", self.on_ctrl_down)
+        self.bind("<KeyPress-Control_R>", self.on_ctrl_down)
+        self.bind("<KeyRelease-Control_L>", self.on_ctrl_up)
+        self.bind("<KeyRelease-Control_R>", self.on_ctrl_up)
+
+    def on_ctrl_down(self, event):
+        self.ctrl_pressed = True
+
+    def on_ctrl_up(self, event):
+        self.ctrl_pressed = False
+        # 松开Ctrl，取消正在绘制的临时框
+        self.ctl.cancel_drawing()
 
     def load_background(self):
         try:
@@ -356,33 +378,25 @@ class MainApp(tk.Tk):
         self.update_background()
 
     def update_background(self):
-        # 只删除旧背景图，保留所有shape标注
         self.canvas.delete("bg")
         if not self.bg_origin or self.img_origin_w <= 0 or self.img_origin_h <= 0:
             return
-        scale = self.ctl.scale
         cw = max(self.canvas.winfo_width(), 10)
         ch = max(self.canvas.winfo_height(), 10)
         img_w = self.img_origin_w
         img_h = self.img_origin_h
-
-        fit_scale = min(cw / img_w, ch / img_h)
-        final_scale = fit_scale * scale
+        self.base_fit_scale = min(cw / img_w, ch / img_h)
+        final_scale = self.base_fit_scale * self.ctl.scale
         new_w = max(int(img_w * final_scale), 1)
         new_h = max(int(img_h * final_scale), 1)
-
         self.bg_scaled = self.bg_origin.resize((new_w, new_h), Image.Resampling.LANCZOS)
         self.bg_tk = ImageTk.PhotoImage(self.bg_scaled)
-        # 关键：持久持有图片引用，防止GC回收
-        self.canvas.bg_cache = self.bg_tk
         self.bg_offset_x = (cw - new_w) / 2
         self.bg_offset_y = (ch - new_h) / 2
-        # 先绘制背景图
         self.bg_img_id = self.canvas.create_image(
             self.bg_offset_x, self.bg_offset_y, image=self.bg_tk, anchor=tk.NW, tags="bg"
         )
-        # 再重绘所有矩形，保证矩形在图片上层
-        self.ctl.redraw_all(self.img_to_canvas)
+        self.canvas.tag_lower("bg")
 
     # 画布坐标 → 原图像素
     def canvas_to_img(self, cx, cy):
@@ -390,26 +404,26 @@ class MainApp(tk.Tk):
             return cx, cy
         rel_x = cx - self.bg_offset_x
         rel_y = cy - self.bg_offset_y
-        scale_ratio = self.img_origin_w / self.bg_scaled.width
-        ix = rel_x * scale_ratio
-        iy = rel_y * scale_ratio
+        total_scale = self.base_fit_scale * self.ctl.scale
+        ix = rel_x / total_scale
+        iy = rel_y / total_scale
         return ix, iy
 
     # 原图像素 → 画布坐标
     def img_to_canvas(self, ix, iy):
         if self.img_origin_w == 0 or self.bg_scaled is None:
             return ix, iy
-        scale_ratio = self.bg_scaled.width / self.img_origin_w
-        cx = ix * scale_ratio + self.bg_offset_x
-        cy = iy * scale_ratio + self.bg_offset_y
+        total_scale = self.base_fit_scale * self.ctl.scale
+        rel_x = ix * total_scale
+        rel_y = iy * total_scale
+        cx = rel_x + self.bg_offset_x
+        cy = rel_y + self.bg_offset_y
         return cx, cy
 
     def right_click_exit_draw(self, event):
         if self.draw_mode.get():
             self.draw_mode.set(False)
-            self.canvas.delete("temp")
-            self.ctl.is_drawing = False
-            self.ctl.temp_rect = None
+            self.ctl.cancel_drawing()
 
     def export_json(self):
         if self.img_origin_w == 0 or self.img_origin_h == 0:
@@ -435,6 +449,7 @@ class MainApp(tk.Tk):
         if path:
             try:
                 img_size = self.ctl.import_json(path)
+                self.update_background()
                 self.ctl.redraw_all(self.img_to_canvas)
                 messagebox.showinfo("成功", f"导入完成，原图尺寸：{img_size}")
             except Exception as e:
@@ -444,12 +459,13 @@ class MainApp(tk.Tk):
         self.ctl.delete_selected(self.img_to_canvas)
 
     def to_real(self, cx: int, cy: int) -> tuple[float, float]:
-        return cx, cy
+        return float(cx), float(cy)
 
     def on_press(self, e: tk.Event):
         x, y = self.to_real(e.x, e.y)
         self.ctl.move_logic_start = (x, y)
-        if self.draw_mode.get():
+        # 固定绘制模式 或 按住Ctrl，都进入绘图
+        if self.draw_mode.get() or self.ctrl_pressed:
             self.ctl.start_drawing(x, y)
         else:
             if self.ctl.try_start_drag_handle(x, y, self.img_to_canvas):
@@ -468,7 +484,7 @@ class MainApp(tk.Tk):
 
     def on_drag(self, e: tk.Event):
         x, y = self.to_real(e.x, e.y)
-        if self.draw_mode.get():
+        if self.draw_mode.get() or self.ctrl_pressed:
             self.ctl.on_drag_draw(x, y)
         else:
             if self.ctl.is_dragging_handle:
@@ -481,7 +497,7 @@ class MainApp(tk.Tk):
     def on_release(self, e: tk.Event):
         x, y = self.to_real(e.x, e.y)
         self.ctl.stop_drag()
-        if self.draw_mode.get():
+        if self.draw_mode.get() or self.ctrl_pressed:
             self.ctl.finish_drawing(x, y, self.canvas_to_img, self.img_to_canvas)
         else:
             self.ctl.finish_select_box(x, y, self.img_to_canvas)
@@ -489,11 +505,12 @@ class MainApp(tk.Tk):
     def on_wheel(self, e: tk.Event):
         delta = 0.1 if e.delta > 0 else -0.1
         self.ctl.set_scale(self.ctl.scale + delta)
-        # 更新背景并自动重绘标注
         self.update_background()
+        self.ctl.redraw_all(self.img_to_canvas)
 
     def resize_bg(self, event):
         self.update_background()
+        self.ctl.redraw_all(self.img_to_canvas)
 
 if __name__ == "__main__":
     app = MainApp()

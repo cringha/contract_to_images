@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 
 import requests
+from requests import RequestException
 from tqdm import tqdm
 
 from enties.commons import NAME_INPUT_XLSX, NAME_CONTRACT_BASE_ROOT, \
@@ -42,7 +43,7 @@ class PasswordLoader:
         return self.password
 
     def ask_password(self) -> str:
-        pass
+        raise Exception("not implemented")
 
 
 class GetPasswordPasswordLoader(PasswordLoader):
@@ -66,7 +67,14 @@ def get_cache_password_file():
 
 def clear_cache_password_file():
     file = get_cache_password_file()
-    file.unlink()
+    try:
+        if file.exists():
+            file.unlink()
+    except Exception as e:
+        logger = get_log()
+        if logger is not None:
+            logger.exception("删除缓存文件失败", e)
+        return
 
 
 # ---------- 工具函数：加载/保存缓存 ----------
@@ -475,6 +483,10 @@ def user_login(username: str, loader: PasswordLoader,
             else:
                 log.info("公钥已变化，重新加密...")
                 raise ValueError("公钥变化")
+        except RequestException as e:
+            log.error(f"network error, {e}")
+            cb_info(False, f"network error, {e}")
+            return None
         except Exception as _:
             # 公钥变化或网络问题，重新加密
             log.info("重新获取公钥并加密...")
@@ -494,6 +506,23 @@ def user_login(username: str, loader: PasswordLoader,
     if save_cache:
         save_cached_password(username, mod_hex, exp_hex, encrypted_pwd)
     return session
+
+
+
+# def download_contract1( session , ):
+#     contract_base_root = ""
+#     if download_contract:
+#         contract_zip = download_by_type(base_path, session, project_ids,
+#                                         file_type=1, zip_name_prefix="合同下载")
+#         log.info(f"合同： {contract_zip}")
+#         if args.extract:
+#             if contract_zip is not None and contract_zip != "":
+#                 full_contract_zip = base_path_path / contract_zip
+#                 target_contract_path = base_path_path / PATH_CONTRACTS
+#                 log.info(
+#                     f"解压合同： {contract_zip}, 到目录 {target_contract_path}")
+#                 unzip_file(full_contract_zip, target_contract_path)
+#                 contract_base_root = str(target_contract_path)
 
 
 # 使用示例
